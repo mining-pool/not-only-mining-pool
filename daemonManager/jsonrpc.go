@@ -8,7 +8,7 @@ type JsonRpc interface {
 }
 
 type JsonRpcResponse struct {
-	Id     interface{}           `json:"id"` // be int64 or null
+	Id     interface{}     `json:"id"` // be int64 or null
 	Result json.RawMessage `json:"result"`
 	Error  *JsonRpcError   `json:"error"`
 }
@@ -27,7 +27,7 @@ func (j *JsonRpcResponse) Json() []byte {
 }
 
 type JsonRpcRequest struct {
-	Id     interface{}             `json:"id"`
+	Id     interface{}       `json:"id"`
 	Method string            `json:"method"`
 	Params []json.RawMessage `json:"params"`
 }

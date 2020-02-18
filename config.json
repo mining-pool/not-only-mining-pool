@@ -25,7 +25,7 @@
 
   "ports": {
     "3032": {
-      "diff": 99104,
+      "diff": 15,
       "varDiff": {
         "minDiff": 1,
         "maxDiff": 100000,

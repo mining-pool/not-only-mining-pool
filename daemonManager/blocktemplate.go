@@ -88,6 +88,8 @@ type GetBlockTemplate struct {
 	// unknown
 	Votes              []string
 	MasternodePayments interface{}
+	Payee              interface{}
+	PayeeAmount        interface{}
 }
 
 // then JobManager.ProcessTemplate(rpcData)

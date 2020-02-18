@@ -87,6 +87,14 @@ func VarIntBytes(n uint64) []byte {
 	}
 }
 
+func VarStringBytes(str string) []byte {
+	bStr := []byte(str)
+	return bytes.Join([][]byte{
+		VarIntBytes(uint64(len(bStr))),
+		bStr,
+	}, nil)
+}
+
 func SerializeString(s string) []byte {
 	if len(s) < 253 {
 		return bytes.Join([][]byte{
@@ -147,10 +155,13 @@ func Uint256BytesFromHash(h string) []byte {
 }
 
 func ReverseBytes(b []byte) []byte {
-	for i, j := 0, len(b)-1; i < j; i, j = i+1, j-1 {
-		b[i], b[j] = b[j], b[i]
+	_b := make([]byte, len(b))
+	copy(_b, b)
+
+	for i, j := 0, len(_b)-1; i < j; i, j = i+1, j-1 {
+		_b[i], _b[j] = _b[j], _b[i]
 	}
-	return b
+	return _b
 }
 
 func Range(start, end, step int) []int {
@@ -209,10 +220,13 @@ func BigIntFromBitsBytes(bits []byte) *big.Int {
 
 // LE <-> BE
 func ReverseByteOrder(b []byte) []byte {
+	_b := make([]byte, len(b))
+	copy(_b, b)
+
 	for i := 0; i < 8; i++ {
-		binary.LittleEndian.PutUint32(b[i*4:], binary.BigEndian.Uint32(b[i*4:]))
+		binary.LittleEndian.PutUint32(_b[i*4:], binary.BigEndian.Uint32(_b[i*4:]))
 	}
-	return ReverseBytes(b)
+	return ReverseBytes(_b)
 }
 
 // For POS coins - used to format wallet address for use in generation transaction's output
@@ -351,5 +365,4 @@ func RawJsonToString(raw json.RawMessage) string {
 	}
 
 	return str
-
 }

@@ -12,7 +12,7 @@ type BanningManager struct {
 
 func NewBanningManager(options *config.BanningOptions) *BanningManager {
 	return &BanningManager{
-		Options: options,
+		Options:      options,
 		BannedIPList: make(map[string]*time.Time),
 	}
 }

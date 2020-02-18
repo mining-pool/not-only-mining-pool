@@ -106,6 +106,7 @@ func (ss *Server) HandleNewClient(socket net.Conn) []byte {
 		for {
 			select {
 			case <-client.SocketClosedEvent:
+				log.Println("socket closed")
 				ss.RemoveStratumClientBySubscriptionId(subscriptionId)
 				// client.disconnected
 			}

@@ -19,7 +19,7 @@ func (dm *DaemonManager) SubmitBlock(blockHex string) {
 
 	for i := range results {
 		if results[i].Error != nil {
-			log.Fatal("rpc error with daemon when submitting block" + string(utils.Jsonify(results[i].Error)))
+			log.Fatal("rpc error with daemon when submitting block: " + string(utils.Jsonify(results[i].Error)))
 		} else {
 			var result string
 			err := json.Unmarshal(results[i].Result, &result)
@@ -30,6 +30,4 @@ func (dm *DaemonManager) SubmitBlock(blockHex string) {
 
 		log.Println(string(utils.Jsonify(results[i].Result)))
 	}
-
-	log.Println("submitting Block" + blockHex + " successfully to daemon instance(s)")
 }

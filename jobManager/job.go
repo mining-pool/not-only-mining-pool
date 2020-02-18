@@ -17,7 +17,7 @@ type Job struct {
 	GetBlockTemplate      *daemonManager.GetBlockTemplate
 	Submits               []string
 	JobParams             []interface{}
-	generationTransaction [][]byte
+	GenerationTransaction [][]byte
 	JobId                 string
 	PrevHashReversed      string
 	MerkleBranch          []string
@@ -67,32 +67,44 @@ func NewJob(jobId string, rpcData *daemonManager.GetBlockTemplate, poolAddressSc
 		recipients,
 	)
 
+	var txData []byte
+	for i := 0; i < len(rpcData.Transactions); i++ {
+		data, err := hex.DecodeString(rpcData.Transactions[i].Data)
+		if err != nil {
+			log.Fatal("failed to decode tx:", rpcData.Transactions[i])
+		}
+
+		txData = append(txData, data...)
+	}
+
 	log.Println("New Job, diff:", bigDiff)
 
 	return &Job{
 		GetBlockTemplate:      rpcData,
 		Submits:               nil,
 		JobParams:             nil,
-		generationTransaction: generationTransaction,
+		GenerationTransaction: generationTransaction,
 		JobId:                 jobId,
 		PrevHashReversed:      prevHashReversed,
-		MerkleTree:            merkleTree,
 		MerkleBranch:          merkleBranch,
 		Target:                bigTarget,
 		Difficulty:            bigDiff,
+		TransactionData:       txData,
+		Reward:                "",
+		MerkleTree:            merkleTree,
 	}
 }
 
 func (j *Job) SerializeCoinbase(extraNonce1, extraNonce2 []byte) []byte {
-	if j.generationTransaction[0] == nil || j.generationTransaction[1] == nil {
-		log.Println("warning: empty generation transaction", j.generationTransaction)
+	if j.GenerationTransaction[0] == nil || j.GenerationTransaction[1] == nil {
+		log.Println("warning: empty generation transaction", j.GenerationTransaction)
 	}
 
 	return bytes.Join([][]byte{
-		j.generationTransaction[0],
+		j.GenerationTransaction[0],
 		extraNonce1,
 		extraNonce2,
-		j.generationTransaction[1],
+		j.GenerationTransaction[1],
 	}, nil)
 }
 
@@ -103,12 +115,19 @@ func (j *Job) SerializeBlock(header, coinbase []byte) []byte {
 		suffix = []byte{0}
 	}
 
+	if j.TransactionData == nil {
+		log.Println("warning: TransactionData is empty")
+	}
+
 	return bytes.Join([][]byte{
 		header,
+
 		utils.VarIntBytes(uint64(len(j.GetBlockTemplate.Transactions) + 1)),
 		coinbase,
 		j.TransactionData,
+
 		j.GetVoteData(),
+
 		suffix,
 	}, nil)
 }
@@ -144,8 +163,8 @@ func (j *Job) RegisterSubmit(extraNonce1, extraNonce2, nTime, nonce string) bool
 
 func (j *Job) GetJobParams() []interface{} {
 	if j.JobParams == nil {
-		generationTransaction0 := hex.EncodeToString(j.generationTransaction[0])
-		generationTransaction1 := hex.EncodeToString(j.generationTransaction[1])
+		generationTransaction0 := hex.EncodeToString(j.GenerationTransaction[0])
+		generationTransaction1 := hex.EncodeToString(j.GenerationTransaction[1])
 
 		j.JobParams = []interface{}{
 			j.JobId,

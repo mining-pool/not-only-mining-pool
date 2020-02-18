@@ -15,6 +15,10 @@ type DaemonManager struct {
 }
 
 func NewDaemonManager(daemons []*config.DaemonOptions, coin *config.CoinOptions) *DaemonManager {
+	if daemons == nil || coin == nil {
+		log.Fatal("new daemon with empty options!")
+	}
+
 	return &DaemonManager{
 		Daemons: daemons,
 		Coin:    coin,

@@ -34,3 +34,20 @@ func TestReverseBytes(t *testing.T) {
 	fmt.Println(hex.EncodeToString(hash))
 	fmt.Println(hex.EncodeToString(ReverseBytes(hash)))
 }
+
+func TestUint256BytesFromHash(t *testing.T) {
+	result, _ := hex.DecodeString("691938264876d1078051da4e30ec0643262e8b93fca661f525fe7122b38d5f18")
+	if bytes.Compare(Uint256BytesFromHash(hex.EncodeToString(Sha256([]byte("Hello")))), result) != 0 {
+		t.Fail()
+	}
+}
+
+func TestVarIntBytes(t *testing.T) {
+	if hex.EncodeToString(VarIntBytes(uint64(23333))) != "fd255b" {
+		t.Fail()
+	}
+}
+
+func TestVarStringBytes(t *testing.T) {
+
+}

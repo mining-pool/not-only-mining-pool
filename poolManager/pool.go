@@ -68,7 +68,7 @@ func NewPool(options *config.Options) *Pool {
 		log.Fatal("Error detecting number of satoshis in a coin, cannot do payment processing. Tried parsing: ", string(utils.Jsonify(getBalance)))
 	}
 
-	jm := jobManager.NewJobManager(options, validateAddressResult)
+	jm := jobManager.NewJobManager(options, validateAddressResult, dm)
 	bm := banningManager.NewBanningManager(options.Banning)
 
 	return &Pool{
@@ -297,10 +297,13 @@ func (p *Pool) SetupBlockPolling() {
 
 				gbt, err := p.DaemonManager.GetBlockTemplate()
 				if err != nil {
-					log.Println("Block notify error getting block template for " + p.Options.Coin.Name)
+					log.Println("Block notify error getting block template for "+p.Options.Coin.Name, err)
 				}
-				log.Println("New Block: ", gbt)
-				p.JobManager.ProcessTemplate(gbt)
+
+				if gbt != nil {
+					log.Println("New Block: ", gbt)
+					p.JobManager.ProcessTemplate(gbt)
+				}
 			}
 		}
 	}()
