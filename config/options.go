@@ -18,6 +18,7 @@ type CoinOptions struct {
 	Reward              string `json:"reward"`
 	NoGetBlockchainInfo bool   `json:"noGetBlockchainInfo"`
 	NoSubmitMethod      bool   `json:"noSubmitMethod"`
+	PeerMagic           string `json:"peerMagic"`
 }
 
 type VarDiffOptions struct {
@@ -55,6 +56,19 @@ func (d *DaemonOptions) URL() string {
 	return "http://" + d.Host + ":" + strconv.FormatInt(int64(d.Port), 10)
 }
 
+type P2POptions struct {
+	Enabled             bool   `json:"enabled"`
+	Host                string `json:"host"`
+	Port                int    `json:"port"`
+	Magic               string `json:"magic"`
+	DisableTransactions bool   `json:"disableTransactions"`
+}
+
+func (p2p *P2POptions) Addr() string {
+
+	return p2p.Host + ":" + strconv.FormatInt(int64(p2p.Port), 10)
+}
+
 type Options struct {
 	Coin                   *CoinOptions         `json:"coin"`
 	Address                string               `json:"address"`
@@ -71,5 +85,6 @@ type Options struct {
 	Testnet                bool                 `json:"-"`
 	PoolAddressScript      []byte               `json:"-"` // not recommend to input from config
 	ProtocolVersion        int                  `json:"-"`
-	NoSubmitMethod         bool                 `json:"nosubmitmethod"`
+	NoSubmitMethod         bool                 `json:"noSubmitMethod"`
+	P2P                    *P2POptions          `json:"p2p"`
 }

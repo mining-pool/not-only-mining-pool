@@ -8,7 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/decred/base58"
+	"github.com/mr-tron/base58"
 	"log"
 	"math/big"
 	"strconv"
@@ -278,15 +278,16 @@ func PublicKeyToScript(key string) []byte {
 
 }
 
-func AddressToScript(addr string) []byte {
-	decoded := base58.Decode(addr)
-
-	if len(decoded) < 25 {
-		log.Panic("invalid address length for " + addr)
+// For POW coins - used to format wallet address for use in generation transaction's output
+// Works for p2pkh only
+func P2PKHAddressToScript(addr string) []byte {
+	decoded, err := base58.FastBase58Decoding(addr)
+	if decoded == nil || err != nil {
+		log.Fatal("base58 decode failed for " + addr)
 	}
 
-	if decoded == nil {
-		log.Panic("base58 decode failed for " + addr)
+	if len(decoded) != 25 {
+		log.Fatal("invalid address length for " + addr)
 	}
 
 	publicKey := decoded[1 : len(decoded)-4]
@@ -295,6 +296,25 @@ func AddressToScript(addr string) []byte {
 		{0x76, 0xA9, 0x14},
 		publicKey,
 		{0x88, 0xAC},
+	}, nil)
+}
+
+func P2SHAddressToScript(addr string) []byte {
+	decoded, err := base58.FastBase58Decoding(addr)
+	if decoded == nil || err != nil {
+		log.Fatal("base58 decode failed for " + addr)
+	}
+
+	if len(decoded) != 25 {
+		log.Fatal("invalid address length for " + addr)
+	}
+
+	publicKey := decoded[1 : len(decoded)-4]
+
+	return bytes.Join([][]byte{
+		{0xA9, 0x14},
+		publicKey,
+		{0x87},
 	}, nil)
 }
 
@@ -398,4 +418,14 @@ func RawJsonToString(raw json.RawMessage) string {
 	}
 
 	return str
+}
+
+func FixedLenStringBytes(s string, l int) []byte {
+	b := make([]byte, l)
+	copy(b, []byte(s))
+	return b
+}
+
+func CommandStringBytes(s string) []byte {
+	return FixedLenStringBytes(s, 12)
 }

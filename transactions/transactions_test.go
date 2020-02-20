@@ -73,7 +73,7 @@ func TestCreateGeneration(t *testing.T) {
 	var rpcData daemonManager.GetBlockTemplate
 	_ = json.Unmarshal([]byte(data), &rpcData)
 
-	pk := utils.AddressToScript("QPxrDq3sorCk8DWaYX2GeCkxoePhm1asyY")
+	pk := utils.P2PKHAddressToScript("QPxrDq3sorCk8DWaYX2GeCkxoePhm1asyY")
 	placeholder, _ := hex.DecodeString("f000000ff111111f")
 
 	log.Println(hex.EncodeToString(utils.PackUint32LE(uint32(0))))
@@ -94,7 +94,7 @@ func TestCreateGeneration(t *testing.T) {
 }
 
 func TestGenerateOutputTransactions(t *testing.T) {
-	publicKey := utils.AddressToScript("QPxrDq3sorCk8DWaYX2GeCkxoePhm1asyY")
+	publicKey := utils.P2PKHAddressToScript("QPxrDq3sorCk8DWaYX2GeCkxoePhm1asyY")
 	recipients := make(map[string]float64)
 	data := `
 {

@@ -317,10 +317,11 @@ func (p *Pool) SetupRecipients() {
 	for r := range p.Options.RewardRecipients {
 		percent := p.Options.RewardRecipients[r]
 		var script []byte
+		// TODO
 		if len(r) == 40 {
 			script = utils.MiningKeyToScript(r)
 		} else {
-			script = utils.AddressToScript(r)
+			script = utils.P2PKHAddressToScript(r)
 		}
 
 		recipients[i] = &payment.Recipient{

@@ -10,6 +10,8 @@ const (
 	Multiplier = 1 << 16 // Math.pow(2, 16)
 )
 
+const Name = "scrypt"
+
 // difficulty = MAX_TARGET / current_target.
 var (
 	MaxTargetTruncated, _ = new(big.Int).SetString("00000000FFFF0000000000000000000000000000000000000000000000000000", 16)

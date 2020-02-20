@@ -41,5 +41,13 @@
     "port": 19332,
     "user": "litecoinrpc",
     "password": "testnet"
-  }]
+  }],
+
+  "p2p": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 19333,
+    "magic": "fcc1b7dc",
+    "disableTransactions": true
+  }
 }

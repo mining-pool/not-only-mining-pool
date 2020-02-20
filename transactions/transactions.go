@@ -29,7 +29,7 @@ func GenerateOutputTransactions(poolRecipient []byte, recipients map[string]floa
 				reward -= payeeReward
 				rewardToPool -= payeeReward
 
-				payeeScript := utils.AddressToScript(rpcData.Masternode[i].Payee)
+				payeeScript := utils.P2PKHAddressToScript(rpcData.Masternode[i].Payee)
 				txOutputBuffers = append(txOutputBuffers, bytes.Join([][]byte{
 					utils.PackUint64BE(payeeReward),
 					utils.VarIntBytes(uint64(len(payeeScript))),
@@ -41,7 +41,7 @@ func GenerateOutputTransactions(poolRecipient []byte, recipients map[string]floa
 				reward -= payeeReward
 				rewardToPool -= payeeReward
 
-				payeeScript := utils.AddressToScript(rpcData.Superblock[i].Payee)
+				payeeScript := utils.P2PKHAddressToScript(rpcData.Superblock[i].Payee)
 				txOutputBuffers = append(txOutputBuffers, bytes.Join([][]byte{
 					utils.PackUint64LE(payeeReward),
 					utils.VarIntBytes(uint64(len(payeeScript))),
@@ -62,7 +62,7 @@ func GenerateOutputTransactions(poolRecipient []byte, recipients map[string]floa
 		reward -= payeeReward
 		rewardToPool -= payeeReward
 
-		payeeScript := utils.AddressToScript(rpcData.Payee.(string))
+		payeeScript := utils.P2PKHAddressToScript(rpcData.Payee.(string))
 		txOutputBuffers = append(txOutputBuffers, bytes.Join([][]byte{
 			utils.PackUint64LE(payeeReward),
 			utils.VarIntBytes(uint64(len(payeeScript))),
@@ -71,7 +71,7 @@ func GenerateOutputTransactions(poolRecipient []byte, recipients map[string]floa
 	}
 
 	for i := range recipients {
-		script := utils.AddressToScript(i)
+		script := utils.P2SHAddressToScript(i)
 
 		recipientReward := uint64(math.Floor(recipients[i] * float64(reward)))
 		rewardToPool -= recipientReward

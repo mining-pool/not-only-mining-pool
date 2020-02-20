@@ -331,7 +331,14 @@ func (jm *JobManager) ProcessShare(jobId string, previousDifficulty, difficulty 
 	//Check if share is a block candidate (matched network difficulty)
 	if job.Target.Cmp(headerHashBigInt) > 0 {
 		blockHex := hex.EncodeToString(job.SerializeBlock(headerBytes, coinbaseBytes))
-		blockHash := hex.EncodeToString(utils.ReverseBytes(algorithm.Hash(headerBytes)))
+		var blockHash string
+		switch algorithm.Name {
+		case "scrypt": // litecoin
+			blockHash = hex.EncodeToString(utils.ReverseBytes(utils.Sha256d(headerBytes)))
+		default:
+			blockHash = hex.EncodeToString(utils.ReverseBytes(algorithm.Hash(headerBytes)))
+
+		}
 
 		share := &Share{
 			JobId:      jobId,
@@ -352,7 +359,7 @@ func (jm *JobManager) ProcessShare(jobId string, previousDifficulty, difficulty 
 		log.Println(utils.JsonifyIndentString(job.GetBlockTemplate)) // rpcData
 
 		jm.OnShare(share) // debug
-		log.Println("Found Block!")
+		log.Println("Found Block: " + blockHash)
 		return true, []byte(blockHash), nil
 	}
 
@@ -409,7 +416,10 @@ func GetPoolAddressScript(reward string, validateAddress *daemonManager.Validate
 	case "POS":
 		return utils.PublicKeyToScript(validateAddress.Pubkey)
 	case "POW":
-		return utils.AddressToScript(validateAddress.Address)
+		if validateAddress.Isscript {
+			return utils.P2SHAddressToScript(validateAddress.Address)
+		}
+		return utils.P2PKHAddressToScript(validateAddress.Address)
 	default:
 		// as POW
 		log.Fatal("unknown reward type: " + reward)

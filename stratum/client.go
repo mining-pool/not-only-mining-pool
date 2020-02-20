@@ -207,6 +207,7 @@ func (sc *Client) AuthorizeFn(ip net.Addr, port int, workerName string, password
 }
 
 func (sc *Client) HandleSubmit(message *daemonManager.JsonRpcRequest) {
+	/* Avoid hash flood */
 	if !sc.IsAuthorized {
 		sc.SendJson(&daemonManager.JsonRpcResponse{
 			Id:     message.Id,
@@ -216,7 +217,8 @@ func (sc *Client) HandleSubmit(message *daemonManager.JsonRpcRequest) {
 				Message: "unauthorized worker",
 			},
 		})
-		sc.ShouldBan(false) // TODO: implement banning
+		sc.ShouldBan(false)
+		return
 	}
 
 	if sc.ExtraNonce1 == nil {
@@ -229,9 +231,10 @@ func (sc *Client) HandleSubmit(message *daemonManager.JsonRpcRequest) {
 			},
 		})
 		sc.ShouldBan(false)
+		return
 	}
 
-	_, _, errParams := sc.JobManager.ProcessShare(
+	ok, _, errParams := sc.JobManager.ProcessShare(
 		utils.RawJsonToString(message.Params[1]),
 		sc.PreviousDifficulty,
 		sc.CurrentDifficulty,
@@ -276,7 +279,13 @@ func (sc *Client) HandleSubmit(message *daemonManager.JsonRpcRequest) {
 		}
 	}
 
-	sc.ShouldBan(true)
+	if !sc.ShouldBan(true) {
+		sc.SendJson(&daemonManager.JsonRpcResponse{
+			Id:     message.Id,
+			Result: utils.Jsonify(ok),
+			Error:  errParams,
+		})
+	}
 }
 
 func (sc *Client) SendJson(jsonRpcs ...daemonManager.JsonRpc) {

@@ -84,3 +84,15 @@ func TestSha256d(t *testing.T) {
 		t.Fail()
 	}
 }
+
+func TestP2PKHAddressToScript(t *testing.T) {
+	addr := "mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn"
+
+	t.Log(hex.EncodeToString(P2PKHAddressToScript(addr)))
+}
+
+func TestP2SHAddressToScript(t *testing.T) {
+	addr := "QcGaxM7GsauRBS4CD2rzkE34HZci2kBeF4"
+
+	t.Log(hex.EncodeToString(P2SHAddressToScript(addr)))
+}

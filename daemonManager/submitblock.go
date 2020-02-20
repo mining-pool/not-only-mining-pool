@@ -8,8 +8,6 @@ import (
 
 // submitblock has no result
 func (dm *DaemonManager) SubmitBlock(blockHex string) {
-	log.Println("submitting block: " + blockHex)
-
 	var results []*JsonRpcResponse
 	if dm.Coin.NoSubmitMethod {
 		_, results = dm.CmdAll("getblocktemplate", []interface{}{map[string]interface{}{"mode": "submit", "data": blockHex}})
@@ -26,8 +24,14 @@ func (dm *DaemonManager) SubmitBlock(blockHex string) {
 			if err == nil && result == "rejected" {
 				log.Println("Daemon instance rejected a supposedly valid block")
 			}
-		}
 
-		log.Println(string(utils.Jsonify(results[i].Result)))
+			if err == nil && result == "invalid" {
+				log.Println("Daemon instance rejected an invalid block")
+			}
+
+			if err == nil && result == "inconclusive" {
+				log.Println("Daemon instance warns an inconclusive block")
+			}
+		}
 	}
 }
