@@ -21,27 +21,25 @@ func NewMerkleTree(data [][]byte) *MerkleTree {
 func CalculateSteps(data [][]byte) [][]byte {
 	L := data
 	steps := make([][]byte, 0)
-	PreL := make([][]byte, 0)
+	PreL := [][]byte{nil}
 	StartL := 2
 	Ll := len(L)
 
-	if Ll > 1 {
-		for Ll != 1 {
-			steps = append(steps, L[1])
+	for Ll > 1 {
+		steps = append(steps, L[1])
 
-			if Ll%2 != 0 {
-				L = append(L, L[len(L)-1])
-			}
-
-			Ld := make([][]byte, 0)
-			r := utils.Range(StartL, Ll, 2)
-
-			for i := range r {
-				Ld = append(Ld, MerkleJoin(L[i], L[i+1]))
-			}
-			L = append(PreL, Ld...)
-			Ll = len(L)
+		if Ll%2 != 0 {
+			L = append(L, L[len(L)-1])
 		}
+
+		r := utils.Range(StartL, Ll, 2)
+		Ld := make([][]byte, len(r))
+
+		for i := 0; i < len(r); i++ {
+			Ld[i] = MerkleJoin(L[r[i]], L[r[i]+1])
+		}
+		L = append(PreL, Ld...)
+		Ll = len(L)
 	}
 
 	return steps
@@ -53,7 +51,7 @@ func MerkleJoin(h1, h2 []byte) []byte {
 
 func (mt *MerkleTree) WithFirst(f []byte) []byte {
 	for i := 0; i < len(mt.Steps); i++ {
-		f = MerkleJoin(f, mt.Steps[i])
+		f = utils.Sha256d(bytes.Join([][]byte{f, mt.Steps[i]}, nil))
 	}
 	return f
 }

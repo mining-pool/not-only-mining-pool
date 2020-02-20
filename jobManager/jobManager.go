@@ -22,7 +22,7 @@ type ExtraNonce1Generator struct {
 
 func NewExtraNonce1Generator() *ExtraNonce1Generator {
 	return &ExtraNonce1Generator{
-		Size: 2,
+		Size: 4,
 	}
 }
 
@@ -259,11 +259,12 @@ func (jm *JobManager) ProcessShare(jobId string, previousDifficulty, difficulty 
 		return false, nil, &daemonManager.JsonRpcError{Code: 20, Message: err.Error()}
 	}
 
+	// allowed nTime range [GBT's CurTime, submitTime+7s]
 	nTimeInt, err := strconv.ParseInt(hexNTime, 16, 64)
 	if err != nil {
 		log.Println(err)
 	}
-	if nTimeInt < job.GetBlockTemplate.CurTime || nTimeInt > submitTime.Unix()+7 {
+	if uint32(nTimeInt) < job.GetBlockTemplate.CurTime || nTimeInt > submitTime.Unix()+7 {
 		err := errors.New("ntime out of range")
 		share := &Share{
 			JobId:      jobId,
@@ -306,7 +307,7 @@ func (jm *JobManager) ProcessShare(jobId string, previousDifficulty, difficulty 
 	coinbaseHash := jm.CoinbaseHasher(coinbaseBytes)
 	merkleRoot := utils.ReverseBytes(job.MerkleTree.WithFirst(coinbaseHash))
 
-	nonce, err := hex.DecodeString(hexNonce)
+	nonce, err := hex.DecodeString(hexNonce) // in big-endian
 	if err != nil {
 		log.Println(err)
 	}
@@ -316,7 +317,7 @@ func (jm *JobManager) ProcessShare(jobId string, previousDifficulty, difficulty 
 		log.Println(err)
 	}
 
-	headerBytes := job.SerializeHeader(merkleRoot, nTimeBytes, nonce)
+	headerBytes := job.SerializeHeader(merkleRoot, nTimeBytes, nonce) // in LE
 	headerHash := algorithm.Hash(headerBytes)
 	headerHashBigInt := new(big.Int).SetBytes(utils.ReverseBytes(headerHash))
 
@@ -328,9 +329,7 @@ func (jm *JobManager) ProcessShare(jobId string, previousDifficulty, difficulty 
 	blockDiffAdjusted := new(big.Float).Mul(job.Difficulty, big.NewFloat(algorithm.Multiplier))
 
 	//Check if share is a block candidate (matched network difficulty)
-	if headerHashBigInt.Cmp(job.Target) <= 0 {
-		log.Println(hex.EncodeToString(headerBytes))
-
+	if job.Target.Cmp(headerHashBigInt) > 0 {
 		blockHex := hex.EncodeToString(job.SerializeBlock(headerBytes, coinbaseBytes))
 		blockHash := hex.EncodeToString(utils.ReverseBytes(algorithm.Hash(headerBytes)))
 
@@ -349,6 +348,8 @@ func (jm *JobManager) ProcessShare(jobId string, previousDifficulty, difficulty 
 			BlockHash:       blockHash,
 			BlockHex:        blockHex,
 		}
+
+		log.Println(utils.JsonifyIndentString(job.GetBlockTemplate)) // rpcData
 
 		jm.OnShare(share) // debug
 		log.Println("Found Block!")

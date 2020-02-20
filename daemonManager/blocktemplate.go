@@ -31,9 +31,9 @@ type TxParams struct {
 type GetBlockTemplate struct {
 	// Base fields from BIP 0022.  CoinbaseAux is optional.  One of
 	// CoinbaseTxn or CoinbaseValue must be specified, but not both.
-	Version           int         `json:"version"`
+	Version           int32       `json:"version"`
 	Bits              string      `json:"bits"`
-	CurTime           int64       `json:"curtime"`
+	CurTime           uint32      `json:"curtime"`
 	Height            int64       `json:"height"`
 	Rules             []string    `json:"rules"`
 	PreviousBlockHash string      `json:"previousblockhash"`
@@ -43,15 +43,15 @@ type GetBlockTemplate struct {
 	WeightLimit       int64       `json:"weightlimit,omitempty"`
 	WorkID            string      `json:"workid,omitempty"`
 	Transactions      []*TxParams `json:"transactions"`
-	CoinbaseTxn       *TxParams   `json:"coinbasetxn,omitempty"`
+	CoinbaseTxn       *TxParams   `json:"coinbasetxn,omitempty"` // Bitcoin does not produce the coinbasetxn for you, you will have to build it manually.
 	CoinbaseAux       struct {
 		Flags string `json:"flags"`
 	} `json:"coinbaseaux"`
 	CoinbaseValue uint64 `json:"coinbasevalue"`
 
 	// Block proposal from BIP 0023.
-	Capabilities  []string `json:"capabilities,omitempty"`
-	RejectReasion string   `json:"reject-reason,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty"`
+	RejectReason string   `json:"reject-reason,omitempty"`
 
 	Vbavailable struct {
 	} `json:"vbavailable"`

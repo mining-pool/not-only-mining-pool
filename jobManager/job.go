@@ -56,7 +56,7 @@ func NewJob(jobId string, rpcData *daemonManager.GetBlockTemplate, poolAddressSc
 		}
 	}
 
-	merkleTree := merkletree.NewMerkleTree(GetTransactionBuffers(rpcData.Transactions))
+	merkleTree := merkletree.NewMerkleTree(GetTransactionBytes(rpcData.Transactions))
 	merkleBranch := merkletree.GetMerkleHashes(merkleTree.Steps)
 	generationTransaction := transactions.CreateGeneration(
 		rpcData,
@@ -67,14 +67,14 @@ func NewJob(jobId string, rpcData *daemonManager.GetBlockTemplate, poolAddressSc
 		recipients,
 	)
 
-	var txData []byte
+	var txData [][]byte
 	for i := 0; i < len(rpcData.Transactions); i++ {
 		data, err := hex.DecodeString(rpcData.Transactions[i].Data)
 		if err != nil {
 			log.Fatal("failed to decode tx:", rpcData.Transactions[i])
 		}
 
-		txData = append(txData, data...)
+		txData = append(txData, data)
 	}
 
 	log.Println("New Job, diff:", bigDiff)
@@ -89,7 +89,7 @@ func NewJob(jobId string, rpcData *daemonManager.GetBlockTemplate, poolAddressSc
 		MerkleBranch:          merkleBranch,
 		Target:                bigTarget,
 		Difficulty:            bigDiff,
-		TransactionData:       txData,
+		TransactionData:       bytes.Join(txData, nil),
 		Reward:                "",
 		MerkleTree:            merkleTree,
 	}
@@ -113,16 +113,23 @@ func (j *Job) SerializeBlock(header, coinbase []byte) []byte {
 	var suffix []byte
 	if j.Reward == "POS" {
 		suffix = []byte{0}
+	} else {
+		suffix = []byte{}
 	}
 
 	if j.TransactionData == nil {
 		log.Println("warning: TransactionData is empty")
 	}
 
+	voteData := j.GetVoteData()
+	if voteData == nil {
+		log.Println("no vote data")
+	}
+
 	return bytes.Join([][]byte{
 		header,
 
-		utils.VarIntBytes(uint64(len(j.GetBlockTemplate.Transactions) + 1)),
+		utils.VarIntBytes(uint64(len(j.GetBlockTemplate.Transactions) + 1)), // coinbase(generation) + txs
 		coinbase,
 		j.TransactionData,
 
@@ -163,18 +170,15 @@ func (j *Job) RegisterSubmit(extraNonce1, extraNonce2, nTime, nonce string) bool
 
 func (j *Job) GetJobParams() []interface{} {
 	if j.JobParams == nil {
-		generationTransaction0 := hex.EncodeToString(j.GenerationTransaction[0])
-		generationTransaction1 := hex.EncodeToString(j.GenerationTransaction[1])
-
 		j.JobParams = []interface{}{
 			j.JobId,
 			j.PrevHashReversed,
-			generationTransaction0,
-			generationTransaction1,
+			hex.EncodeToString(j.GenerationTransaction[0]),
+			hex.EncodeToString(j.GenerationTransaction[1]),
 			j.MerkleBranch,
-			hex.EncodeToString(utils.PackUint32BE(uint32(j.GetBlockTemplate.Version))),
+			hex.EncodeToString(utils.PackInt32BE(j.GetBlockTemplate.Version)),
 			j.GetBlockTemplate.Bits,
-			hex.EncodeToString(utils.PackUint32BE(uint32(j.GetBlockTemplate.CurTime))),
+			hex.EncodeToString(utils.PackUint32BE(j.GetBlockTemplate.CurTime)),
 			true,
 		}
 	}
@@ -182,13 +186,14 @@ func (j *Job) GetJobParams() []interface{} {
 	return j.JobParams
 }
 
-func GetTransactionBuffers(txs []*daemonManager.TxParams) [][]byte {
+func GetTransactionBytes(txs []*daemonManager.TxParams) [][]byte {
 	var txHashes [][]byte
 	for i := 0; i < len(txs); i++ {
 		if txs[i].TxId != "" {
 			txHashes = append(txHashes, utils.Uint256BytesFromHash(txs[i].TxId))
+		} else {
+			txHashes = append(txHashes, utils.Uint256BytesFromHash(txs[i].Hash))
 		}
-		txHashes = append(txHashes, utils.Uint256BytesFromHash(txs[i].Hash))
 	}
 
 	return append([][]byte{nil}, txHashes...)

@@ -36,6 +36,12 @@ func PackUint64LE(n uint64) []byte {
 	return b
 }
 
+func PackInt64BE(n int64) []byte {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, uint64(n))
+	return b
+}
+
 func PackUint64BE(n uint64) []byte {
 	b := make([]byte, 8)
 	binary.BigEndian.PutUint64(b, n)
@@ -54,6 +60,12 @@ func PackUint32BE(n uint32) []byte {
 	return b
 }
 
+func PackInt32BE(n int32) []byte {
+	b := make([]byte, 4)
+	binary.BigEndian.PutUint32(b, uint32(n))
+	return b
+}
+
 func PackUint16LE(n uint16) []byte {
 	b := make([]byte, 2)
 	binary.LittleEndian.PutUint16(b, n)
@@ -69,22 +81,27 @@ func PackUint16BE(n uint16) []byte {
 func VarIntBytes(n uint64) []byte {
 	if n < 0xFD {
 		return []byte{byte(n)}
-	} else if n < 0xFFFF {
+	}
+
+	if n <= 0xFFFF {
 		buff := make([]byte, 3)
-		buff[0] = 0xfd
+		buff[0] = 0xFD
 		binary.LittleEndian.PutUint16(buff[1:], uint16(n))
 		return buff
-	} else if n < 0xFFFFFFFF {
+	}
+
+	if n <= 0xFFFFFFFF {
 		buff := make([]byte, 5)
 		buff[0] = 0xFE
 		binary.LittleEndian.PutUint32(buff[1:], uint32(n))
 		return buff
-	} else {
-		buff := make([]byte, 9)
-		buff[0] = 0xFF
-		binary.LittleEndian.PutUint64(buff[1:], uint64(n))
-		return buff
 	}
+
+	buff := make([]byte, 9)
+	buff[0] = 0xFF
+	binary.LittleEndian.PutUint64(buff[1:], uint64(n))
+	return buff
+
 }
 
 func VarStringBytes(str string) []byte {
@@ -164,16 +181,32 @@ func ReverseBytes(b []byte) []byte {
 	return _b
 }
 
-func Range(start, end, step int) []int {
-	if step <= 0 || end < start {
+// range steps between [start, end)
+func Range(start, stop, step int) []int {
+	if (step > 0 && start >= stop) || (step < 0 && start <= stop) {
 		return []int{}
 	}
-	s := make([]int, 0, 1+(end-start)/step)
-	for start <= end {
-		s = append(s, start)
-		start += step
+
+	var result = make([]int, 0)
+	i := start
+	for {
+		if step > 0 {
+			if i < stop {
+				result = append(result, i)
+			} else {
+				break
+			}
+		} else {
+			if i > stop {
+				result = append(result, i)
+			} else {
+				break
+			}
+		}
+		i += step
 	}
-	return s
+
+	return result
 }
 
 func Sha256(b []byte) []byte {

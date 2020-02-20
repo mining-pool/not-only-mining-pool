@@ -8,7 +8,7 @@
   "address": "QPxrDq3sorCk8DWaYX2GeCkxoePhm1asyY",
   "rewardRecipients": {},
 
-  "blockRefreshInterval": 1000,
+  "blockRefreshInterval": 10,
   "jobRebroadcastTimeout": 55,
 
   "connectionTimeout": 600,

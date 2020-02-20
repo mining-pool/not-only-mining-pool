@@ -31,7 +31,7 @@ func GenerateOutputTransactions(poolRecipient []byte, recipients map[string]floa
 
 				payeeScript := utils.AddressToScript(rpcData.Masternode[i].Payee)
 				txOutputBuffers = append(txOutputBuffers, bytes.Join([][]byte{
-					utils.PackUint64LE(payeeReward),
+					utils.PackUint64BE(payeeReward),
 					utils.VarIntBytes(uint64(len(payeeScript))),
 				}, nil))
 			}
@@ -110,8 +110,6 @@ func GenerateOutputTransactions(poolRecipient []byte, recipients map[string]floa
 }
 
 func CreateGeneration(rpcData *daemonManager.GetBlockTemplate, publicKey, extraNoncePlaceholder []byte, reward string, txMessages bool, recipients map[string]float64) [][]byte {
-	txInputsCount := 1
-
 	var txVersion int
 	var txComment []byte
 	if txMessages {
@@ -150,7 +148,7 @@ func CreateGeneration(rpcData *daemonManager.GetBlockTemplate, publicKey, extraN
 		txTimestamp,
 
 		//transaction input
-		utils.VarIntBytes(uint64(txInputsCount)),
+		utils.VarIntBytes(1), // only one txIn
 		utils.Uint256BytesFromHash(txInPrevOutHash),
 		utils.PackUint32LE(uint32(txInPrevOutIndex)),
 		utils.VarIntBytes(uint64(len(scriptSigPart1) + len(extraNoncePlaceholder) + len(scriptSigPart2))),
