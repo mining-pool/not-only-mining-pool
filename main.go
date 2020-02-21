@@ -2,8 +2,8 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/node-standalone-pool/go-pool-server/config"
-	"github.com/node-standalone-pool/go-pool-server/poolManager"
+	"github.com/mining-pool/go-pool-server/config"
+	"github.com/mining-pool/go-pool-server/poolManager"
 	"log"
 	"muzzammil.xyz/jsonc"
 	"os"

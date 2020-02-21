@@ -3,7 +3,7 @@ package merkletree
 import (
 	"bytes"
 	"encoding/hex"
-	"github.com/node-standalone-pool/go-pool-server/utils"
+	"github.com/mining-pool/go-pool-server/utils"
 )
 
 type MerkleTree struct {

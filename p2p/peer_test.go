@@ -2,7 +2,7 @@ package p2p
 
 import (
 	"encoding/json"
-	"github.com/node-standalone-pool/go-pool-server/config"
+	"github.com/mining-pool/go-pool-server/config"
 	"testing"
 )
 

@@ -1,4 +1,4 @@
-module github.com/node-standalone-pool/go-pool-server
+module github.com/mining-pool/go-pool-server
 
 go 1.13
 

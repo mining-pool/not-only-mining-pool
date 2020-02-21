@@ -1,7 +1,7 @@
 package algorithm
 
 import (
-	"github.com/node-standalone-pool/go-pool-server/utils"
+	"github.com/mining-pool/go-pool-server/utils"
 	"golang.org/x/crypto/scrypt"
 	"log"
 	"math/big"

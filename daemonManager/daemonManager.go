@@ -3,8 +3,8 @@ package daemonManager
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/node-standalone-pool/go-pool-server/config"
-	"github.com/node-standalone-pool/go-pool-server/utils"
+	"github.com/mining-pool/go-pool-server/config"
+	"github.com/mining-pool/go-pool-server/utils"
 	"log"
 	"net/http"
 )

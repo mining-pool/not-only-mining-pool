@@ -1,7 +1,7 @@
 package config
 
 import (
-	"github.com/node-standalone-pool/go-pool-server/utils"
+	"github.com/mining-pool/go-pool-server/utils"
 	"log"
 	"strconv"
 	"strings"
