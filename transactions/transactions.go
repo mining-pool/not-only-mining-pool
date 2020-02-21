@@ -3,6 +3,7 @@ package transactions
 import (
 	"bytes"
 	"encoding/hex"
+	"github.com/node-standalone-pool/go-pool-server/config"
 	"github.com/node-standalone-pool/go-pool-server/daemonManager"
 	"github.com/node-standalone-pool/go-pool-server/utils"
 	"log"
@@ -17,7 +18,7 @@ import (
 //	DefaultWitnessCommitment string
 //}
 
-func GenerateOutputTransactions(poolRecipient []byte, recipients map[string]float64, rpcData *daemonManager.GetBlockTemplate) []byte {
+func GenerateOutputTransactions(poolRecipient []byte, recipients []*config.Recipient, rpcData *daemonManager.GetBlockTemplate) []byte {
 	reward := rpcData.CoinbaseValue
 	rewardToPool := reward
 	txOutputBuffers := make([][]byte, 0)
@@ -71,9 +72,9 @@ func GenerateOutputTransactions(poolRecipient []byte, recipients map[string]floa
 	}
 
 	for i := range recipients {
-		script := utils.P2SHAddressToScript(i)
+		script := recipients[i].GetScript()
 
-		recipientReward := uint64(math.Floor(recipients[i] * float64(reward)))
+		recipientReward := uint64(math.Floor(recipients[i].Percent * float64(reward)))
 		rewardToPool -= recipientReward
 
 		txOutputBuffers = append(txOutputBuffers, bytes.Join([][]byte{
@@ -90,7 +91,6 @@ func GenerateOutputTransactions(poolRecipient []byte, recipients map[string]floa
 	}, nil)}, txOutputBuffers...)
 
 	if rpcData.DefaultWitnessCommitment != "" {
-		log.Println("having DefaultWitnessCommitment", rpcData.DefaultWitnessCommitment)
 		witnessCommitment, err := hex.DecodeString(rpcData.DefaultWitnessCommitment)
 		if err != nil {
 			log.Println(err)
@@ -109,7 +109,7 @@ func GenerateOutputTransactions(poolRecipient []byte, recipients map[string]floa
 	}, nil)
 }
 
-func CreateGeneration(rpcData *daemonManager.GetBlockTemplate, publicKey, extraNoncePlaceholder []byte, reward string, txMessages bool, recipients map[string]float64) [][]byte {
+func CreateGeneration(rpcData *daemonManager.GetBlockTemplate, publicKey, extraNoncePlaceholder []byte, reward string, txMessages bool, recipients []*config.Recipient) [][]byte {
 	var txVersion int
 	var txComment []byte
 	if txMessages {

@@ -9,7 +9,6 @@ import (
 	"github.com/node-standalone-pool/go-pool-server/config"
 	"github.com/node-standalone-pool/go-pool-server/daemonManager"
 	"github.com/node-standalone-pool/go-pool-server/jobManager"
-	"github.com/node-standalone-pool/go-pool-server/payment"
 	"github.com/node-standalone-pool/go-pool-server/stratum"
 	"github.com/node-standalone-pool/go-pool-server/utils"
 	"log"
@@ -29,19 +28,20 @@ type Pool struct {
 	HasGetInfo             bool
 	Stats                  *Stats
 	BlockPollingIntervalCh <-chan time.Time
-	Recipients             []*payment.Recipient
+	Recipients             []*config.Recipient
+	ProtocolVersion        int
 }
 
 func NewPool(options *config.Options) *Pool {
 	dm := daemonManager.NewDaemonManager(options.Daemons, options.Coin)
 	dm.Init()
 
-	_, validateAddress, daemon := dm.Cmd("validateaddress", []interface{}{options.Address})
+	_, validateAddress, daemon := dm.Cmd("validateaddress", []interface{}{options.PoolAddress.Address})
 	if validateAddress.Error != nil {
 		log.Fatal("Error with payment processing daemon: ", string(utils.Jsonify(daemon)), " error: ", utils.JsonifyIndentString(validateAddress.Error))
 	}
 
-	_, result, _ := dm.Cmd("getaddressinfo", []interface{}{options.Address})
+	_, result, _ := dm.Cmd("getaddressinfo", []interface{}{options.PoolAddress.Address})
 
 	if result.Error != nil {
 		log.Fatal("Error with payment processing daemon, getaddressinfo failed ... ", utils.JsonifyIndentString(result.Error))
@@ -157,7 +157,7 @@ func (p *Pool) DetectCoinData() {
 	}
 
 	// validateaddress
-	_, rpcResponse, _ = p.DaemonManager.Cmd("validateaddress", []interface{}{p.Options.Address})
+	_, rpcResponse, _ = p.DaemonManager.Cmd("validateaddress", []interface{}{p.Options.PoolAddress.Address})
 	if rpcResponse.Error != nil || rpcResponse == nil {
 		log.Println("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
 		return
@@ -209,7 +209,7 @@ func (p *Pool) DetectCoinData() {
 		getInfo := daemonManager.BytesToGetInfo(rpcResponse.Result)
 
 		p.Options.Testnet = getInfo.Testnet
-		p.Options.ProtocolVersion = getInfo.Protocolversion
+		p.ProtocolVersion = getInfo.Protocolversion
 		//diff = getInfo.Difficulty
 
 		p.Stats.Connections = getInfo.Connections
@@ -228,7 +228,7 @@ func (p *Pool) DetectCoinData() {
 		}
 		getBlockchainInfo := daemonManager.BytesToGetBlockchainInfo(rpcResponse.Result)
 		p.Options.Testnet = strings.Contains(getBlockchainInfo.Chain, "test")
-		p.Options.ProtocolVersion = getNetworkInfo.Protocolversion
+		p.ProtocolVersion = getNetworkInfo.Protocolversion
 		//diff = getBlockchainInfo.Difficulty
 
 		p.Stats.Connections = getNetworkInfo.Connections
@@ -311,31 +311,31 @@ func (p *Pool) SetupBlockPolling() {
 
 // TODO: move to payment module
 func (p *Pool) SetupRecipients() {
-	recipients := make([]*payment.Recipient, len(p.Options.RewardRecipients))
-
-	i := 0
-	for r := range p.Options.RewardRecipients {
-		percent := p.Options.RewardRecipients[r]
-		var script []byte
-		// TODO
-		if len(r) == 40 {
-			script = utils.MiningKeyToScript(r)
-		} else {
-			script = utils.P2PKHAddressToScript(r)
-		}
-
-		recipients[i] = &payment.Recipient{
-			Percent: percent,
-			Script:  script,
-		}
-
-		p.Options.FeePercent = p.Options.FeePercent + percent
-		i++
-	}
-
-	if len(recipients) == 0 {
-		log.Println("No rewardRecipients have been setup which means no fees will be taken")
-	}
-
-	p.Recipients = recipients
+	//recipients := make([]*payment.Recipient, len(p.Options.RewardRecipients))
+	//
+	//i := 0
+	//for r := range p.Options.RewardRecipients {
+	//	percent := p.Options.RewardRecipients[r]
+	//	var script []byte
+	//	// TODO
+	//	if len(r) == 40 {
+	//		script = utils.MiningKeyToScript(r)
+	//	} else {
+	//		script = utils.P2PKHAddressToScript(r)
+	//	}
+	//
+	//	recipients[i] = &payment.Recipient{
+	//		Percent: percent,
+	//		Script:  script,
+	//	}
+	//
+	//	p.Options.FeePercent = p.Options.FeePercent + percent
+	//	i++
+	//}
+	//
+	//if len(recipients) == 0 {
+	//	log.Println("No rewardRecipients have been setup which means no fees will be taken")
+	//}
+	//
+	//p.Recipients = recipients
 }

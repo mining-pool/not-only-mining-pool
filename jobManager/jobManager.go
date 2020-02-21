@@ -356,9 +356,7 @@ func (jm *JobManager) ProcessShare(jobId string, previousDifficulty, difficulty 
 			BlockHex:        blockHex,
 		}
 
-		log.Println(utils.JsonifyIndentString(job.GetBlockTemplate)) // rpcData
-
-		jm.OnShare(share) // debug
+		jm.OnShare(share)
 		log.Println("Found Block: " + blockHash)
 		return true, []byte(blockHash), nil
 	}

@@ -59,7 +59,9 @@ func TestVarIntBytes(t *testing.T) {
 }
 
 func TestVarStringBytes(t *testing.T) {
-	t.Log(hex.EncodeToString(VarStringBytes("Hello")))
+	if hex.EncodeToString(VarStringBytes("Hello")) != "0548656c6c6f" {
+		t.Fail()
+	}
 }
 
 func TestRange(t *testing.T) {
@@ -95,4 +97,10 @@ func TestP2SHAddressToScript(t *testing.T) {
 	addr := "QcGaxM7GsauRBS4CD2rzkE34HZci2kBeF4"
 
 	t.Log(hex.EncodeToString(P2SHAddressToScript(addr)))
+}
+
+func TestCommandStringBytes(t *testing.T) {
+	if hex.EncodeToString(CommandStringBytes("version")) != "76657273696f6e0000000000" {
+		t.Fail()
+	}
 }

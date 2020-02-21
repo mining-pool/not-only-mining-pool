@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/node-standalone-pool/go-pool-server/config"
 	"github.com/node-standalone-pool/go-pool-server/daemonManager"
 	"github.com/node-standalone-pool/go-pool-server/utils"
 	"log"
@@ -78,7 +79,7 @@ func TestCreateGeneration(t *testing.T) {
 
 	log.Println(hex.EncodeToString(utils.PackUint32LE(uint32(0))))
 
-	gens := CreateGeneration(&rpcData, pk, placeholder, "POW", true, make(map[string]float64))
+	gens := CreateGeneration(&rpcData, pk, placeholder, "POW", true, []*config.Recipient{})
 
 	log.Println("0: ", hex.EncodeToString(gens[0]))
 	log.Println("1: ", hex.EncodeToString(gens[1]))
@@ -95,7 +96,7 @@ func TestCreateGeneration(t *testing.T) {
 
 func TestGenerateOutputTransactions(t *testing.T) {
 	publicKey := utils.P2PKHAddressToScript("QPxrDq3sorCk8DWaYX2GeCkxoePhm1asyY")
-	recipients := make(map[string]float64)
+	recipients := make([]*config.Recipient, 0)
 	data := `
 {
   "capabilities": [

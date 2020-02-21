@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"github.com/node-standalone-pool/go-pool-server/algorithm"
+	"github.com/node-standalone-pool/go-pool-server/config"
 	"github.com/node-standalone-pool/go-pool-server/daemonManager"
 	"github.com/node-standalone-pool/go-pool-server/merkletree"
 	"github.com/node-standalone-pool/go-pool-server/transactions"
@@ -28,7 +29,7 @@ type Job struct {
 	MerkleTree            *merkletree.MerkleTree
 }
 
-func NewJob(jobId string, rpcData *daemonManager.GetBlockTemplate, poolAddressScript, extraNoncePlaceholder []byte, reward string, txMessages bool, recipients map[string]float64) *Job {
+func NewJob(jobId string, rpcData *daemonManager.GetBlockTemplate, poolAddressScript, extraNoncePlaceholder []byte, reward string, txMessages bool, recipients []*config.Recipient) *Job {
 	var bigTarget *big.Int
 
 	if rpcData.Target != "" {

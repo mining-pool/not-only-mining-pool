@@ -1,6 +1,7 @@
 package algorithm
 
 import (
+	"github.com/node-standalone-pool/go-pool-server/utils"
 	"golang.org/x/crypto/scrypt"
 	"log"
 	"math/big"
@@ -22,6 +23,7 @@ func Hash(data []byte) []byte {
 	return ScryptHash(data)
 }
 
+// ScryptHash is the algorithm which litecoin uses as its PoW mining algorithm
 func ScryptHash(data []byte) []byte {
 	b, err := scrypt.Key(data, data, 1024, 1, 1, 32)
 	if err != nil {
@@ -29,4 +31,9 @@ func ScryptHash(data []byte) []byte {
 	}
 
 	return b
+}
+
+// DoubleSha256Hash is the algorithm which litecoin uses as its PoW mining algorithm
+func DoubleSha256Hash(b []byte) []byte {
+	return utils.Sha256d(b)
 }

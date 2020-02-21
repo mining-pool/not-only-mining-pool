@@ -5,14 +5,14 @@ import (
 	"github.com/node-standalone-pool/go-pool-server/config"
 	"github.com/node-standalone-pool/go-pool-server/poolManager"
 	"log"
-	"os"
+	"muzzammil.xyz/jsonc"
 )
 
 func main() {
 	var conf config.Options
-	f, _ := os.Open("config.json")
 
-	_ = json.NewDecoder(f).Decode(&conf)
+	_, rawJson, _ := jsonc.ReadFromFile("config.jsonc")
+	_ = json.Unmarshal(rawJson, &conf)
 
 	p := poolManager.NewPool(&conf)
 	p.Init()
