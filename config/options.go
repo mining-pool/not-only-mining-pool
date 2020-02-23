@@ -116,12 +116,11 @@ type Options struct {
 	Banning *BanningOptions      `json:"banning"`
 	Ports   map[int]*PortOptions `json:"ports"`
 	Daemons []*DaemonOptions     `json:"daemons"`
-	P2P     *P2POptions          `json:"p2p"`
+	P2P     *P2POptions          `json:"p2pManager"`
 
 	NoSubmitMethod bool `json:"noSubmitMethod"`
 
-	Testnet           bool   `json:"-"`
-	PoolAddressScript []byte `json:"-"` // not recommend to input from config
-	//ProtocolVersion        int                  `json:"-"`
-	FeePercent float64 `json:"-"`
+	Testnet           bool    `json:"-"`
+	PoolAddressScript []byte  `json:"-"` // not recommend to input from config
+	FeePercent        float64 `json:"-"`
 }

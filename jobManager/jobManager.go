@@ -172,6 +172,7 @@ func (jm *JobManager) ProcessTemplate(rpcData *daemonManager.GetBlockTemplate) b
 		return false
 	}
 
+	log.Println("New Block: ", string(utils.Jsonify(rpcData)))
 	tmpBlockTemplate := NewJob(
 		jm.JobCounter.Next(),
 		rpcData,
@@ -183,9 +184,6 @@ func (jm *JobManager) ProcessTemplate(rpcData *daemonManager.GetBlockTemplate) b
 	)
 
 	jm.CurrentJob = tmpBlockTemplate
-
-	//jm.NewBlockEvent <- tmpBlockTemplate
-
 	jm.ValidJobs[tmpBlockTemplate.JobId] = tmpBlockTemplate
 
 	return true

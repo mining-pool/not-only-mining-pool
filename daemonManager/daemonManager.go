@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/mining-pool/go-pool-server/config"
 	"github.com/mining-pool/go-pool-server/utils"
+	"io/ioutil"
 	"log"
 	"net/http"
 )
@@ -25,11 +26,9 @@ func NewDaemonManager(daemons []*config.DaemonOptions, coin *config.CoinOptions)
 	}
 }
 
-func (dm *DaemonManager) Init() {
-	online := dm.IsAllOnline()
-
-	if online {
-		log.Println("all online now")
+func (dm *DaemonManager) Check() {
+	if !dm.IsAllOnline() {
+		log.Fatal("daemons are not all online!")
 	}
 }
 
@@ -43,10 +42,12 @@ func (dm *DaemonManager) IsAllOnline() bool {
 		var jsonRes JsonRpcResponse
 		err := json.NewDecoder(res.Body).Decode(&jsonRes)
 		if err != nil {
+			log.Println(err)
 			return false
 		}
 
 		if jsonRes.Error != nil {
+			log.Println(jsonRes.Error)
 			return false
 		}
 
@@ -114,7 +115,13 @@ func (dm *DaemonManager) CmdAll(method string, params []interface{}) ([]*http.Re
 		responses = append(responses, res)
 
 		var result JsonRpcResponse
-		err = json.NewDecoder(res.Body).Decode(&result)
+		raw, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			log.Println(err)
+		}
+		res.Body = ioutil.NopCloser(bytes.NewBuffer(raw))
+
+		err = json.Unmarshal(raw, &result)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -141,7 +148,13 @@ func (dm *DaemonManager) Cmd(method string, params []interface{}) (*http.Respons
 		}
 
 		var result JsonRpcResponse
-		err = json.NewDecoder(res.Body).Decode(&result)
+		raw, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			log.Println(err)
+		}
+		res.Body = ioutil.NopCloser(bytes.NewBuffer(raw))
+
+		err = json.Unmarshal(raw, &result)
 		if err != nil {
 			log.Println(err)
 		}

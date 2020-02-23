@@ -1,4 +1,4 @@
-package p2p
+package p2pManager
 
 import (
 	"bytes"
@@ -27,12 +27,14 @@ type Peer struct {
 
 	InvCodes        map[string]uint32
 	Commands        map[string][]byte
-	Options         config.P2POptions
+	Options         *config.P2POptions
 	Conn            net.Conn
 	ProtocolVersion int
+
+	BlockNotifyCh chan string
 }
 
-func NewPeer(protocolVersion int, options config.P2POptions) *Peer {
+func NewPeer(protocolVersion int, options *config.P2POptions) *Peer {
 	if options.Enabled == false {
 		return nil
 	}
@@ -83,6 +85,8 @@ func NewPeer(protocolVersion int, options config.P2POptions) *Peer {
 			"addr":      utils.CommandStringBytes("addr"),
 			"getblocks": utils.CommandStringBytes("getblocks"),
 		},
+
+		BlockNotifyCh: make(chan string),
 	}
 }
 
@@ -175,7 +179,7 @@ func (p *Peer) HandleInv(payload []byte) {
 			block := hex.EncodeToString(buf[4:36])
 			log.Println("block found: ", block)
 			// block found
-			// processBlockNotify(hash, 'p2p');
+			p.ProcessBlockNotify(block)
 			break
 		}
 		buf = buf[36:]
@@ -222,4 +226,11 @@ func (p *Peer) SendVersion() {
 	}, nil)
 
 	p.SendMessage(p.Commands["version"], payload)
+}
+
+func (p *Peer) ProcessBlockNotify(blockHash string) {
+	log.Println("Block notification via p2p")
+	//if p.JobManager.CurrentJob != nil && blockHash != p.JobManager.CurrentJob.GetBlockTemplate.PreviousBlockHash {
+	p.BlockNotifyCh <- blockHash
+	//}
 }

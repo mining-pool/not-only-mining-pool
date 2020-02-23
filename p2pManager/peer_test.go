@@ -1,4 +1,4 @@
-package p2p
+package p2pManager
 
 import (
 	"encoding/json"
@@ -17,7 +17,7 @@ func TestNewPeer(t *testing.T) {
     "disableTransactions": true
 }
 `), &options)
-	peer := NewPeer(70015, options)
+	peer := NewPeer(70015, &options)
 	peer.Init()
 
 	for {

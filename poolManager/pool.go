@@ -9,6 +9,7 @@ import (
 	"github.com/mining-pool/go-pool-server/config"
 	"github.com/mining-pool/go-pool-server/daemonManager"
 	"github.com/mining-pool/go-pool-server/jobManager"
+	"github.com/mining-pool/go-pool-server/p2pManager"
 	"github.com/mining-pool/go-pool-server/stratum"
 	"github.com/mining-pool/go-pool-server/utils"
 	"log"
@@ -19,9 +20,12 @@ import (
 )
 
 type Pool struct {
-	DaemonManager          *daemonManager.DaemonManager
-	JobManager             *jobManager.JobManager
-	StratumServer          *stratum.Server
+	DaemonManager *daemonManager.DaemonManager
+	JobManager    *jobManager.JobManager
+	P2PManager    *p2pManager.Peer
+
+	StratumServer *stratum.Server
+
 	Options                *config.Options
 	Magnitude              uint64
 	CoinPrecision          int
@@ -34,7 +38,7 @@ type Pool struct {
 
 func NewPool(options *config.Options) *Pool {
 	dm := daemonManager.NewDaemonManager(options.Daemons, options.Coin)
-	dm.Init()
+	dm.Check()
 
 	_, validateAddress, daemon := dm.Cmd("validateaddress", []interface{}{options.PoolAddress.Address})
 	if validateAddress.Error != nil {
@@ -75,6 +79,7 @@ func NewPool(options *config.Options) *Pool {
 		Options:       options,
 		DaemonManager: dm,
 		JobManager:    jm,
+
 		StratumServer: stratum.NewStratumServer(options, jm, bm),
 		Magnitude:     uint64(magnitude),
 		CoinPrecision: len(strconv.FormatUint(uint64(magnitude), 10)) - 1,
@@ -84,6 +89,10 @@ func NewPool(options *config.Options) *Pool {
 
 //
 func (p *Pool) Init() {
+	if !p.CheckAllSynced() {
+		log.Fatal("Not synced!")
+	}
+
 	p.DetectCoinData()
 
 	initGBT, err := p.DaemonManager.GetBlockTemplate()
@@ -91,29 +100,43 @@ func (p *Pool) Init() {
 		log.Fatal(err)
 	}
 
+	p.SetupP2PBlockNotify()
+	p.SetupBlockPolling()
+
 	p.JobManager.Init(initGBT)
+
+	p.StartStratumServer()
+	p.OutputPoolInfo()
 }
 
-// This method is being called from the blockNotify so that when a new block is discovered by the daemon
-// We can inform our miners about the newly found block
-func (p *Pool) ProcessBlockNotify(blockHash string, sourceTrigger string) {
-	log.Println("Block notification via " + sourceTrigger)
-	if p.JobManager.CurrentJob != nil && blockHash != p.JobManager.CurrentJob.GetBlockTemplate.PreviousBlockHash {
-		gbt, err := p.DaemonManager.GetBlockTemplate()
-		if err != nil {
-			log.Println("Block notify error getting block template")
-			log.Println(err)
-		}
-		p.JobManager.ProcessTemplate(gbt)
+func (p *Pool) SetupP2PBlockNotify() {
+	if p.Options.P2P == nil || !p.Options.P2P.Enabled {
+		return
 	}
-}
 
-// removeAllListeners
-//func (p *Pool) RelinquishMiners(filterFn) {
-//	originStratumClients := p.Server.StratumClients
-//	stratumClients := make([]*stratum.Client, len(originStratumClients))
-//	i := 0
-//}
+	p.P2PManager = p2pManager.NewPeer(p.ProtocolVersion, p.Options.P2P)
+	p.Init()
+
+	go func() {
+		for {
+			select {
+			case blockHash, ok := <-p.P2PManager.BlockNotifyCh:
+				if !ok {
+					log.Println("Block notify is stopped!")
+					return
+				}
+
+				if p.JobManager.CurrentJob != nil && blockHash != p.JobManager.CurrentJob.GetBlockTemplate.PreviousBlockHash {
+					gbt, err := p.DaemonManager.GetBlockTemplate()
+					if err != nil {
+						log.Println("Block notify error getting block template: ", err)
+					}
+					p.JobManager.ProcessTemplate(gbt)
+				}
+			}
+		}
+	}()
+}
 
 func (p *Pool) AttachMiners(miners []*stratum.Client) {
 	for i := range miners {
@@ -301,41 +324,9 @@ func (p *Pool) SetupBlockPolling() {
 				}
 
 				if gbt != nil {
-					log.Println("New Block: ", gbt)
 					p.JobManager.ProcessTemplate(gbt)
 				}
 			}
 		}
 	}()
-}
-
-// TODO: move to payment module
-func (p *Pool) SetupRecipients() {
-	//recipients := make([]*payment.Recipient, len(p.Options.RewardRecipients))
-	//
-	//i := 0
-	//for r := range p.Options.RewardRecipients {
-	//	percent := p.Options.RewardRecipients[r]
-	//	var script []byte
-	//	// TODO
-	//	if len(r) == 40 {
-	//		script = utils.MiningKeyToScript(r)
-	//	} else {
-	//		script = utils.P2PKHAddressToScript(r)
-	//	}
-	//
-	//	recipients[i] = &payment.Recipient{
-	//		Percent: percent,
-	//		Script:  script,
-	//	}
-	//
-	//	p.Options.FeePercent = p.Options.FeePercent + percent
-	//	i++
-	//}
-	//
-	//if len(recipients) == 0 {
-	//	log.Println("No rewardRecipients have been setup which means no fees will be taken")
-	//}
-	//
-	//p.Recipients = recipients
 }

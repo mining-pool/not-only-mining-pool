@@ -11,6 +11,7 @@ import (
 	"github.com/mr-tron/base58"
 	"log"
 	"math/big"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -428,4 +429,12 @@ func FixedLenStringBytes(s string, l int) []byte {
 
 func CommandStringBytes(s string) []byte {
 	return FixedLenStringBytes(s, 12)
+}
+
+func FileExists(filename string) bool {
+	info, err := os.Stat(filename)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return !info.IsDir()
 }

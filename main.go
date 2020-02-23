@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/mining-pool/go-pool-server/config"
 	"github.com/mining-pool/go-pool-server/poolManager"
+	"github.com/mining-pool/go-pool-server/utils"
 	"log"
 	"muzzammil.xyz/jsonc"
 	"os"
@@ -11,8 +12,7 @@ import (
 
 func main() {
 	var conf config.Options
-
-	if _, err := os.Stat("config.jsonc"); os.IsExist(err) {
+	if utils.FileExists("config.jsonc") {
 		_, rawJson, err := jsonc.ReadFromFile("config.jsonc")
 		if err != nil {
 			log.Fatal(err)
@@ -21,14 +21,14 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-	}
-
-	if _, err := os.Stat("config.json"); os.IsExist(err) {
-		_, rawJson, err := jsonc.ReadFromFile("config.json")
+	} else if utils.FileExists("config.json") {
+		log.Println("reading config from config.json")
+		f, err := os.Open("config.json")
 		if err != nil {
 			log.Fatal(err)
 		}
-		err = json.Unmarshal(rawJson, &conf)
+
+		err = json.NewDecoder(f).Decode(&conf)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -36,15 +36,6 @@ func main() {
 
 	p := poolManager.NewPool(&conf)
 	p.Init()
-	p.SetupRecipients()
-	p.SetupBlockPolling()
-	p.StartStratumServer()
-	if !p.CheckAllSynced() {
-		log.Fatal("Not synced!")
-	}
-
-	//p.ProcessBlockNotify()
-	p.OutputPoolInfo()
 	for {
 		select {}
 	}

@@ -62,3 +62,6 @@ or
 ## Donation
 
 **LTC**: LXxqHY4StG79nqRurdNNt1wF2yCf4Mc986
+
+## Tested Network
+- LTC Testnet
