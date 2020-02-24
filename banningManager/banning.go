@@ -34,7 +34,7 @@ func (bm *BanningManager) Init() {
 }
 
 func (bm *BanningManager) CheckBan(strRemoteAddr string) (shouldCloseSocket bool) {
-	if bm.Options.Enabled && bm.BannedIPList[strRemoteAddr] != nil {
+	if bm.BannedIPList[strRemoteAddr] != nil {
 		bannedTime := bm.BannedIPList[strRemoteAddr]
 		bannedTimeAgo := time.Now().Sub(*bannedTime)
 		timeLeft := time.Duration(bm.Options.Time)*time.Second - bannedTimeAgo

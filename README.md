@@ -24,7 +24,9 @@ Make sure your algorithm in support, if not, take an issue.
 
 ### 0x01 Configuration
 
-Read `config.jsonc` and modify the configurations 
+Read `config.example.json5` and modify the configurations
+
+Then rename it to `config.json5` 
 
 ### 0x02 Build
 

@@ -15,9 +15,8 @@ import (
 )
 
 type Server struct {
-	Options    *config.Options
-	Listener   net.Listener
-	TLSOptions *tls.Config
+	Options  *config.Options
+	Listener net.Listener
 
 	DaemonManager       *daemonManager.DaemonManager
 	VarDiff             *vardiff.VarDiff
@@ -33,7 +32,6 @@ func NewStratumServer(options *config.Options, jm *jobManager.JobManager, bm *ba
 	return &Server{
 		Options:             options,
 		BanningManager:      bm,
-		TLSOptions:          nil,
 		SubscriptionCounter: NewSubscriptionCounter(),
 
 		JobManager:     jm,
@@ -42,14 +40,14 @@ func NewStratumServer(options *config.Options, jm *jobManager.JobManager, bm *ba
 }
 
 func (ss *Server) Init() (portStarted []int) {
-	if ss.Options.Banning != nil && ss.Options.Banning.Enabled {
+	if ss.Options.Banning != nil {
 		ss.BanningManager.Init()
 	}
 
 	for port, options := range ss.Options.Ports {
 		var err error
-		if options.TLS {
-			ss.Listener, err = tls.Listen("tcp", ":"+strconv.Itoa(port), ss.TLSOptions)
+		if options.TLS != nil {
+			ss.Listener, err = tls.Listen("tcp", ":"+strconv.Itoa(port), options.TLS.ToTLSConfig())
 		} else {
 			ss.Listener, _ = net.Listen("tcp", ":"+strconv.Itoa(port))
 		}

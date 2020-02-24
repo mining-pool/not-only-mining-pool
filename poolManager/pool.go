@@ -110,7 +110,7 @@ func (p *Pool) Init() {
 }
 
 func (p *Pool) SetupP2PBlockNotify() {
-	if p.Options.P2P == nil || !p.Options.P2P.Enabled {
+	if p.Options.P2P == nil {
 		return
 	}
 
@@ -281,7 +281,7 @@ func (p *Pool) OutputPoolInfo() {
 		"Network Difficulty:\t" + strconv.FormatFloat(p.Stats.Difficulty, 'f', 7, 64),
 		"Network Hash Rate:\t" + utils.GetReadableHashRateString(p.Stats.NetworkHashrate),
 		"Stratum Port(s):\t" + string(utils.Jsonify(p.Stats.StratumPorts)),
-		"Pool Fee Percent:\t" + strconv.FormatFloat(p.Options.FeePercent, 'f', 7, 64) + "%",
+		"Total Pool Fee Percent:\t" + strconv.FormatFloat(p.Options.TotalFeePercent(), 'f', 7, 64) + "%",
 	}
 
 	fmt.Println(strings.Join(infoLines, "\n\t"))

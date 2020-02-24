@@ -43,7 +43,8 @@
         "targetTime": 15,
         "retargetTime": 90,
         "variancePercent": 30
-      }
+      },
+      "tls": null
     }
   },
 
@@ -66,5 +67,18 @@
     "enabled": true,
     "host": "0.0.0.0",
     "port": 20000
+  },
+
+  // the config for redis
+  "storage": {
+    "network": "tcp",
+    "host": "127.0.0.1",
+    "port": 6379,
+
+    // can be null if you dont wanna use tls on your port
+    "tls": {
+      "certFile": "cert.pem",
+      "keyFile": "server.key"
+    }
   }
 }

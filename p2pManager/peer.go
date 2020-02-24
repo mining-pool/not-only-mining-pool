@@ -35,10 +35,6 @@ type Peer struct {
 }
 
 func NewPeer(protocolVersion int, options *config.P2POptions) *Peer {
-	if options.Enabled == false {
-		return nil
-	}
-
 	magic, err := hex.DecodeString(options.Magic)
 	if err != nil {
 		log.Fatal("magic hex string is incorrect")
