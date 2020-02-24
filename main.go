@@ -1,8 +1,8 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
-	"github.com/flynn/json5"
 	"github.com/mining-pool/go-pool-server/config"
 	"github.com/mining-pool/go-pool-server/poolManager"
 	"github.com/mining-pool/go-pool-server/utils"
@@ -10,7 +10,7 @@ import (
 	"os"
 )
 
-const defaultConfigFileName = "config.json5"
+const defaultConfigFileName = "config.json"
 
 var configFileName = flag.String("c", defaultConfigFileName, "configuration file for pool")
 
@@ -25,7 +25,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	err = json5.NewDecoder(f).Decode(&conf)
+	err = json.NewDecoder(f).Decode(&conf)
 	if err != nil {
 		log.Fatal(err)
 	}
