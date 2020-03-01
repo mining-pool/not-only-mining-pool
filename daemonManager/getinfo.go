@@ -6,7 +6,6 @@ import (
 	"log"
 )
 
-// TODO
 type GetInfo struct {
 	Version            int     `json:"version"`
 	Protocolversion    int     `json:"protocolversion"`

@@ -6,8 +6,6 @@ import (
 	"log"
 )
 
-// TODO
-
 type GetMiningInfo struct {
 	Blocks           int     `json:"blocks"`
 	Currentblocksize int     `json:"currentblocksize"`

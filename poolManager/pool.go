@@ -42,13 +42,13 @@ func NewPool(options *config.Options) *Pool {
 
 	_, validateAddress, daemon := dm.Cmd("validateaddress", []interface{}{options.PoolAddress.Address})
 	if validateAddress.Error != nil {
-		log.Fatal("Error with payment processing daemon: ", string(utils.Jsonify(daemon)), " error: ", utils.JsonifyIndentString(validateAddress.Error))
+		log.Fatal("ErrorCode with payment processing daemon: ", string(utils.Jsonify(daemon)), " error: ", utils.JsonifyIndentString(validateAddress.Error))
 	}
 
 	_, result, _ := dm.Cmd("getaddressinfo", []interface{}{options.PoolAddress.Address})
 
 	if result.Error != nil {
-		log.Fatal("Error with payment processing daemon, getaddressinfo failed ... ", utils.JsonifyIndentString(result.Error))
+		log.Fatal("ErrorCode with payment processing daemon, getaddressinfo failed ... ", utils.JsonifyIndentString(result.Error))
 	}
 
 	validateAddressResult := daemonManager.BytesToValidateAddress(result.Result)
@@ -69,7 +69,7 @@ func NewPool(options *config.Options) *Pool {
 
 	magnitude, err := strconv.ParseInt("10"+strconv.Itoa(len(d))+"0", 10, 64)
 	if err != nil {
-		log.Fatal("Error detecting number of satoshis in a coin, cannot do payment processing. Tried parsing: ", string(utils.Jsonify(getBalance)))
+		log.Fatal("ErrorCode detecting number of satoshis in a coin, cannot do payment processing. Tried parsing: ", string(utils.Jsonify(getBalance)))
 	}
 
 	jm := jobManager.NewJobManager(options, validateAddressResult, dm)

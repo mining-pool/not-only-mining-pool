@@ -46,7 +46,7 @@ func (j *JsonRpcRequest) Json() []byte {
 }
 
 type JsonRpcError struct {
-	Code    int64  `json:"code"`
+	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
 

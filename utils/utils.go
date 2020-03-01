@@ -31,6 +31,16 @@ func RandPositiveInt64() int64 {
 	}
 }
 
+func RandHexUint64() string {
+	randomNumBytes := make([]byte, 8)
+	_, err := rand.Read(randomNumBytes)
+	if err != nil {
+		log.Println(err)
+	}
+
+	return hex.EncodeToString(randomNumBytes)
+}
+
 func PackUint64LE(n uint64) []byte {
 	b := make([]byte, 8)
 	binary.LittleEndian.PutUint64(b, n)

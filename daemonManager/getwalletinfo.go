@@ -6,8 +6,6 @@ import (
 	"log"
 )
 
-// TODO
-
 type GetWalletInfo struct {
 	Walletversion      int     `json:"walletversion"`
 	Balance            float64 `json:"balance"`

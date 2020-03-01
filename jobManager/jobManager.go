@@ -1,12 +1,12 @@
 package jobManager
 
 import (
-	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"github.com/mining-pool/go-pool-server/algorithm"
 	"github.com/mining-pool/go-pool-server/config"
 	"github.com/mining-pool/go-pool-server/daemonManager"
+	"github.com/mining-pool/go-pool-server/storageManager"
+	"github.com/mining-pool/go-pool-server/types"
 	"github.com/mining-pool/go-pool-server/utils"
 	"log"
 	"math/big"
@@ -16,43 +16,12 @@ import (
 	"time"
 )
 
-type ExtraNonce1Generator struct {
-	Size int
-}
-
-func NewExtraNonce1Generator() *ExtraNonce1Generator {
-	return &ExtraNonce1Generator{
-		Size: 4,
-	}
-}
-
-func (eng *ExtraNonce1Generator) GetExtraNonce1() []byte {
-	extraNonce := make([]byte, eng.Size)
-	_, _ = rand.Read(extraNonce)
-
-	return extraNonce
-}
-
 type JobCounter struct {
 	Counter *big.Int
 }
 
-func NewJobCounter() *JobCounter {
-	return &JobCounter{}
-}
-
-func (jc *JobCounter) Next() string {
-	buf := make([]byte, 8)
-	_, _ = rand.Read(buf)
-	jc.Counter = new(big.Int).SetBytes(buf)
-	return jc.Cur()
-}
-
-func (jc *JobCounter) Cur() string {
-	return hex.EncodeToString(jc.Counter.Bytes())
-}
-
 type JobManager struct {
+	Storage               *storageManager.Storage
 	Options               *config.Options
 	JobCounter            *JobCounter
 	ExtraNonce1Generator  *ExtraNonce1Generator
@@ -76,7 +45,6 @@ func NewJobManager(options *config.Options, validateAddress *daemonManager.Valid
 
 	return &JobManager{
 		Options:               options,
-		JobCounter:            NewJobCounter(),
 		ExtraNonce1Generator:  extraNonce1Generator,
 		ExtraNoncePlaceholder: placeholder,
 		ExtraNonce2Size:       len(placeholder) - extraNonce1Generator.Size,
@@ -93,27 +61,30 @@ func (jm *JobManager) Init(gbt *daemonManager.GetBlockTemplate) {
 	jm.ProcessTemplate(gbt)
 }
 
-func (jm *JobManager) OnShare(share *Share) {
-	//isValidShare := share.Error == nil
-	isValidBlock := share.BlockHex != ""
-
-	if isValidBlock {
+func (jm *JobManager) ProcessShare(share *types.Share) {
+	//isValidBlock
+	if share.BlockHex != "" {
 		jm.DaemonManager.SubmitBlock(share.BlockHex)
 
 		isAccepted, tx := jm.CheckBlockAccepted(share.BlockHex)
-		if isAccepted {
-			log.Println("Accepted")
-		}
-
 		share.TxHash = tx
+		if isAccepted {
+			go jm.Storage.PutShare(share)
+			log.Println("Block Accepted: ")
+		}
 
 		gbt, err := jm.DaemonManager.GetBlockTemplate()
 		if err != nil {
 			panic(err)
 		}
 		jm.ProcessTemplate(gbt)
+		return
+	}
 
-		// TODO: add share to db
+	// isValidShare
+	if share.ErrorCode == 0 {
+		go jm.Storage.PutShare(share)
+		return
 	}
 }
 
@@ -174,7 +145,7 @@ func (jm *JobManager) ProcessTemplate(rpcData *daemonManager.GetBlockTemplate) b
 
 	log.Println("New Block: ", string(utils.Jsonify(rpcData)))
 	tmpBlockTemplate := NewJob(
-		jm.JobCounter.Next(),
+		utils.RandHexUint64(),
 		rpcData,
 		GetPoolAddressScript(jm.Options.Coin.Reward, jm.ValidateAddress),
 		jm.ExtraNoncePlaceholder,
@@ -189,24 +160,30 @@ func (jm *JobManager) ProcessTemplate(rpcData *daemonManager.GetBlockTemplate) b
 	return true
 }
 
-type Share struct {
-	JobId           string
-	Ip              net.Addr
-	Worker          string
-	Difficulty      *big.Float
-	Error           error
-	BlockHash       string
-	Height          int64
-	BlockReward     uint64
-	ShareDiff       *big.Float
-	BlockDiff       *big.Float
-	BlockDiffActual *big.Float
-	BlockHex        string
-	TxHash          string
-}
-
-func (jm *JobManager) ProcessShare(jobId string, previousDifficulty, difficulty *big.Float, extraNonce1 []byte, hexExtraNonce2, hexNTime, hexNonce string, ipAddress net.Addr, port int, workerName string) (ok bool, blockHash []byte, errParams *daemonManager.JsonRpcError) {
+func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, extraNonce1 []byte, hexExtraNonce2, hexNTime, hexNonce string, ipAddr net.Addr, workerName string) (ok bool, share *types.Share) {
 	submitTime := time.Now()
+
+	var miner, rig string
+	names := strings.Split(workerName, ".")
+	if len(names) < 2 {
+		miner = names[0]
+		rig = "unknown"
+	} else {
+		miner = names[0]
+		rig = names[1]
+	}
+
+	job, exists := jm.ValidJobs[jobId]
+	if !exists || job == nil || job.JobId != jobId {
+		share = &types.Share{
+			JobId:      jobId,
+			RemoteAddr: ipAddr,
+			Miner:      miner,
+			Rig:        rig,
+			ErrorCode:  20,
+		}
+		return false, share
+	}
 
 	extraNonce2, err := hex.DecodeString(hexExtraNonce2)
 	if err != nil {
@@ -214,47 +191,27 @@ func (jm *JobManager) ProcessShare(jobId string, previousDifficulty, difficulty 
 	}
 
 	if len(extraNonce2) != jm.ExtraNonce2Size {
-		err := errors.New("incorrect size of extranonce2")
-		share := &Share{
+		share = &types.Share{
 			JobId:      jobId,
-			Ip:         ipAddress,
-			Worker:     workerName,
-			Difficulty: difficulty,
-			Error:      err,
-		}
-		jm.OnShare(share)
-		return false, nil, &daemonManager.JsonRpcError{
-			Code:    20,
-			Message: err.Error(),
-		}
-	}
+			RemoteAddr: ipAddr,
+			Miner:      miner,
+			Rig:        rig,
 
-	job := jm.ValidJobs[jobId]
-	if job == nil || job.JobId != jobId {
-		log.Println(jobId, "not in", jm.ValidJobs)
-		err := errors.New("job not found")
-		share := &Share{
-			JobId:      jobId,
-			Ip:         ipAddress,
-			Worker:     workerName,
-			Difficulty: difficulty,
-			Error:      err,
+			ErrorCode: 21,
 		}
-		jm.OnShare(share)
-		return false, nil, &daemonManager.JsonRpcError{Code: 21, Message: err.Error()}
+		return false, share
 	}
 
 	if len(hexNTime) != 8 {
-		err := errors.New("incorrect size of ntime")
-		share := &Share{
+		share = &types.Share{
 			JobId:      jobId,
-			Ip:         ipAddress,
-			Worker:     workerName,
-			Difficulty: difficulty,
-			Error:      err,
+			RemoteAddr: ipAddr,
+			Miner:      miner,
+			Rig:        rig,
+
+			ErrorCode: 22,
 		}
-		jm.OnShare(share)
-		return false, nil, &daemonManager.JsonRpcError{Code: 20, Message: err.Error()}
+		return false, share
 	}
 
 	// allowed nTime range [GBT's CurTime, submitTime+7s]
@@ -263,42 +220,36 @@ func (jm *JobManager) ProcessShare(jobId string, previousDifficulty, difficulty 
 		log.Println(err)
 	}
 	if uint32(nTimeInt) < job.GetBlockTemplate.CurTime || nTimeInt > submitTime.Unix()+7 {
-		err := errors.New("ntime out of range")
-		share := &Share{
+		return false, &types.Share{
 			JobId:      jobId,
-			Ip:         ipAddress,
-			Worker:     workerName,
-			Difficulty: difficulty,
-			Error:      err,
+			RemoteAddr: ipAddr,
+			Miner:      miner,
+			Rig:        rig,
+
+			ErrorCode: 23,
 		}
-		jm.OnShare(share)
-		return false, nil, &daemonManager.JsonRpcError{Code: 20, Message: err.Error()}
 	}
 
 	if len(hexNonce) != 8 {
-		err := errors.New("incorrect size of nonce")
-		share := &Share{
+		return false, &types.Share{
 			JobId:      jobId,
-			Ip:         ipAddress,
-			Worker:     workerName,
-			Difficulty: difficulty,
-			Error:      err,
+			RemoteAddr: ipAddr,
+			Miner:      miner,
+			Rig:        rig,
+
+			ErrorCode: 24,
 		}
-		jm.OnShare(share)
-		return false, nil, &daemonManager.JsonRpcError{Code: 20, Message: err.Error()}
 	}
 
 	if !job.RegisterSubmit(hex.EncodeToString(extraNonce1), hexExtraNonce2, hexNTime, hexNonce) {
-		err := errors.New("duplicate share")
-		share := &Share{
+		return false, &types.Share{
 			JobId:      jobId,
-			Ip:         ipAddress,
-			Worker:     workerName,
-			Difficulty: difficulty,
-			Error:      err,
+			RemoteAddr: ipAddr,
+			Miner:      miner,
+			Rig:        rig,
+
+			ErrorCode: 25,
 		}
-		jm.OnShare(share)
-		return false, nil, &daemonManager.JsonRpcError{Code: 22, Message: err.Error()}
 	}
 
 	coinbaseBytes := job.SerializeCoinbase(extraNonce1, extraNonce2)
@@ -319,12 +270,11 @@ func (jm *JobManager) ProcessShare(jobId string, previousDifficulty, difficulty 
 	headerHash := algorithm.Hash(headerBytes)
 	headerHashBigInt := new(big.Int).SetBytes(utils.ReverseBytes(headerHash))
 
-	shareDiff := new(big.Float).Quo(
+	bigShareDiff := new(big.Float).Quo(
 		new(big.Float).SetInt(new(big.Int).Mul(algorithm.MaxTargetTruncated, big.NewInt(algorithm.Multiplier))),
 		new(big.Float).SetInt(headerHashBigInt),
 	)
-
-	blockDiffAdjusted := new(big.Float).Mul(job.Difficulty, big.NewFloat(algorithm.Multiplier))
+	shareDiff, _ := bigShareDiff.Float64()
 
 	//Check if share is a block candidate (matched network difficulty)
 	if job.Target.Cmp(headerHashBigInt) > 0 {
@@ -338,73 +288,52 @@ func (jm *JobManager) ProcessShare(jobId string, previousDifficulty, difficulty 
 
 		}
 
-		share := &Share{
-			JobId:      jobId,
-			Ip:         ipAddress,
-			Worker:     workerName,
-			Difficulty: difficulty,
-			Error:      nil,
-
-			Height:          job.GetBlockTemplate.Height,
-			BlockReward:     job.GetBlockTemplate.CoinbaseValue,
-			ShareDiff:       shareDiff,
-			BlockDiff:       blockDiffAdjusted,
-			BlockDiffActual: job.Difficulty,
-			BlockHash:       blockHash,
-			BlockHex:        blockHex,
-		}
-
-		jm.OnShare(share)
 		log.Println("Found Block: " + blockHash)
-		return true, []byte(blockHash), nil
+		return true, &types.Share{
+			JobId:      jobId,
+			RemoteAddr: ipAddr,
+			Miner:      miner,
+			Rig:        rig,
+
+			BlockHeight: job.GetBlockTemplate.Height,
+			BlockReward: job.GetBlockTemplate.CoinbaseValue,
+			Diff:        shareDiff,
+			BlockHash:   blockHash,
+			BlockHex:    blockHex,
+		}
 	}
 
 	//Check if share didn't reached the miner's difficulty)
-	if new(big.Float).Quo(shareDiff, difficulty).Cmp(big.NewFloat(0.99)) < 0 {
+	if new(big.Float).Quo(bigShareDiff, diff).Cmp(big.NewFloat(0.99)) < 0 {
 		//Check if share matched a previous difficulty from before a vardiff retarget
-		if previousDifficulty != nil && shareDiff.Cmp(previousDifficulty) >= 0 {
-			difficulty = previousDifficulty
+		if prevDiff != nil && bigShareDiff.Cmp(prevDiff) >= 0 {
 
-			share := &Share{
+			return true, &types.Share{
 				JobId:      jobId,
-				Ip:         ipAddress,
-				Worker:     workerName,
-				Difficulty: difficulty,
-				Error:      err,
+				RemoteAddr: ipAddr,
+				Miner:      miner,
+				Rig:        rig,
 
-				Height:          job.GetBlockTemplate.Height,
-				BlockReward:     job.GetBlockTemplate.CoinbaseValue,
-				ShareDiff:       shareDiff,
-				BlockDiff:       blockDiffAdjusted,
-				BlockDiffActual: job.Difficulty,
-				//BlockHash: nil,
-				//BlockHex: nil,
+				BlockHeight: job.GetBlockTemplate.Height,
+				BlockReward: job.GetBlockTemplate.CoinbaseValue,
+				Diff:        shareDiff,
 			}
-			jm.OnShare(share)
-			return true, nil, nil
 		} else {
-			err := errors.New("low difficulty share: " + shareDiff.String() + "/" + difficulty.String())
-			share := &Share{
+			return false, &types.Share{
 				JobId:      jobId,
-				Ip:         ipAddress,
-				Worker:     workerName,
-				Difficulty: difficulty,
-				Error:      err,
+				RemoteAddr: ipAddr,
+				Miner:      workerName,
+				ErrorCode:  26,
 			}
-			jm.OnShare(share)
-			return false, nil, &daemonManager.JsonRpcError{Code: 23, Message: err.Error()}
 		}
 	}
 
-	share := &Share{
+	return true, &types.Share{
 		JobId:      jobId,
-		Ip:         ipAddress,
-		Worker:     workerName,
-		Difficulty: difficulty,
-		Error:      nil,
+		RemoteAddr: ipAddr,
+		Miner:      miner,
+		Rig:        rig,
 	}
-	jm.OnShare(share)
-	return true, nil, nil
 }
 
 func GetPoolAddressScript(reward string, validateAddress *daemonManager.ValidateAddress) []byte {

@@ -6,8 +6,6 @@ import (
 	"log"
 )
 
-//// TODO
-
 //type GetDifficulty interface {}
 
 func BytesToGetDifficulty(b []byte) interface{} {

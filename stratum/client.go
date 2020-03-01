@@ -10,6 +10,7 @@ import (
 	"github.com/mining-pool/go-pool-server/config"
 	"github.com/mining-pool/go-pool-server/daemonManager"
 	"github.com/mining-pool/go-pool-server/jobManager"
+	"github.com/mining-pool/go-pool-server/types"
 	"github.com/mining-pool/go-pool-server/utils"
 	"github.com/mining-pool/go-pool-server/vardiff"
 	"io"
@@ -134,19 +135,19 @@ func (sc *Client) HandleSubscribe(message *daemonManager.JsonRpcRequest) {
 	extraNonce2Size := sc.JobManager.ExtraNonce2Size
 
 	// TODO
-	var err error
-	if err != nil {
-		sc.SendJson(&daemonManager.JsonRpcResponse{
-			Id:     message.Id,
-			Result: nil,
-			Error: &daemonManager.JsonRpcError{
-				Code:    20,
-				Message: err.Error(),
-			},
-		})
-
-		return
-	}
+	//var err error
+	//if err != nil {
+	//	sc.SendJson(&daemonManager.JsonRpcResponse{
+	//		Id:     message.Id,
+	//		Result: nil,
+	//		ErrorCode: &daemonManager.JsonRpcError{
+	//			Code:    20,
+	//			Message: err.ErrorCode(),
+	//		},
+	//	})
+	//
+	//	return
+	//}
 
 	sc.SendJson(&daemonManager.JsonRpcResponse{
 		Id: message.Id,
@@ -234,7 +235,7 @@ func (sc *Client) HandleSubmit(message *daemonManager.JsonRpcRequest) {
 		return
 	}
 
-	ok, _, errParams := sc.JobManager.ProcessShare(
+	ok, share := sc.JobManager.ProcessSubmit(
 		utils.RawJsonToString(message.Params[1]),
 		sc.PreviousDifficulty,
 		sc.CurrentDifficulty,
@@ -243,13 +244,16 @@ func (sc *Client) HandleSubmit(message *daemonManager.JsonRpcRequest) {
 		utils.RawJsonToString(message.Params[3]),
 		utils.RawJsonToString(message.Params[4]),
 		sc.RemoteAddress,
-		sc.Socket.LocalAddr().(*net.TCPAddr).Port,
 		utils.RawJsonToString(message.Params[0]),
 	)
 
-	if errParams != nil && errParams.Code == 23 {
+	if ok {
+		sc.JobManager.ProcessShare(share)
+	}
+
+	if share.ErrorCode == 23 {
 		// warn the miner with current diff
-		log.Println("Code23: sending ", string(utils.Jsonify([]json.RawMessage{utils.Jsonify(sc.CurrentDifficulty)})))
+		log.Println("Error: sending ", string(utils.Jsonify([]json.RawMessage{utils.Jsonify(sc.CurrentDifficulty)})))
 		f, _ := sc.CurrentDifficulty.Float64()
 		sc.SendJson(&daemonManager.JsonRpcRequest{
 			Id:     nil,
@@ -280,6 +284,14 @@ func (sc *Client) HandleSubmit(message *daemonManager.JsonRpcRequest) {
 	}
 
 	if !sc.ShouldBan(true) {
+		var errParams *daemonManager.JsonRpcError
+		if share.ErrorCode != 0 {
+			errParams = &daemonManager.JsonRpcError{
+				Code:    share.ErrorCode,
+				Message: types.CodeToErrMap[share.ErrorCode],
+			}
+		}
+
 		sc.SendJson(&daemonManager.JsonRpcResponse{
 			Id:     message.Id,
 			Result: utils.Jsonify(ok),
