@@ -23,32 +23,45 @@ func GenerateOutputTransactions(poolRecipient []byte, recipients []*config.Recip
 	rewardToPool := reward
 	txOutputBuffers := make([][]byte, 0)
 
-	if rpcData.Masternode != nil && rpcData.Superblock != nil {
-		if len(rpcData.Masternode) > 0 {
-			for i := range rpcData.Masternode {
-				payeeReward := rpcData.Masternode[i].Amount
-				reward -= payeeReward
-				rewardToPool -= payeeReward
+	if rpcData.Masternode != nil && len(rpcData.Masternode) > 0 {
+		log.Println("handling dash's masternode")
+		for i := range rpcData.Masternode {
+			payeeReward := rpcData.Masternode[i].Amount
+			reward -= payeeReward
+			rewardToPool -= payeeReward
 
-				payeeScript := utils.P2PKHAddressToScript(rpcData.Masternode[i].Payee)
-				txOutputBuffers = append(txOutputBuffers, bytes.Join([][]byte{
-					utils.PackUint64BE(payeeReward),
-					utils.VarIntBytes(uint64(len(payeeScript))),
-				}, nil))
+			var payeeScript []byte
+			if len(rpcData.Masternode[i].Script) > 0 {
+				payeeScript, _ = hex.DecodeString(rpcData.Masternode[i].Script)
+			} else {
+				payeeScript = utils.P2PKHAddressToScript(rpcData.Masternode[i].Payee)
 			}
-		} else if len(rpcData.Superblock) > 0 {
-			for i := range rpcData.Superblock {
-				payeeReward := rpcData.Superblock[i].Amount
-				reward -= payeeReward
-				rewardToPool -= payeeReward
+			txOutputBuffers = append(txOutputBuffers, bytes.Join([][]byte{
+				utils.PackUint64BE(payeeReward),
+				utils.VarIntBytes(uint64(len(payeeScript))),
+			}, nil))
+		}
+	}
 
-				payeeScript := utils.P2PKHAddressToScript(rpcData.Superblock[i].Payee)
-				txOutputBuffers = append(txOutputBuffers, bytes.Join([][]byte{
-					utils.PackUint64LE(payeeReward),
-					utils.VarIntBytes(uint64(len(payeeScript))),
-					payeeScript,
-				}, nil))
+	if rpcData.Superblock != nil && len(rpcData.Superblock) > 0 {
+		log.Println("handling dash's superblock")
+		for i := range rpcData.Superblock {
+			payeeReward := rpcData.Superblock[i].Amount
+			reward -= payeeReward
+			rewardToPool -= payeeReward
+
+			var payeeScript []byte
+			if len(rpcData.Superblock[i].Script) > 0 {
+				payeeScript, _ = hex.DecodeString(rpcData.Superblock[i].Script)
+			} else {
+				payeeScript = utils.P2PKHAddressToScript(rpcData.Superblock[i].Payee)
 			}
+
+			txOutputBuffers = append(txOutputBuffers, bytes.Join([][]byte{
+				utils.PackUint64LE(payeeReward),
+				utils.VarIntBytes(uint64(len(payeeScript))),
+				payeeScript,
+			}, nil))
 		}
 	}
 
@@ -112,6 +125,8 @@ func GenerateOutputTransactions(poolRecipient []byte, recipients []*config.Recip
 func CreateGeneration(rpcData *daemonManager.GetBlockTemplate, publicKey, extraNoncePlaceholder []byte, reward string, txMessages bool, recipients []*config.Recipient) [][]byte {
 	var txVersion int
 	var txComment []byte
+	var txType = 0
+	var txExtraPayload []byte
 	if txMessages {
 		txVersion = 2
 		txComment = utils.SerializeString("by Command")
@@ -121,13 +136,21 @@ func CreateGeneration(rpcData *daemonManager.GetBlockTemplate, publicKey, extraN
 	}
 	txLockTime := 0
 
+	if rpcData.CoinbasePayload != "" && len(rpcData.CoinbasePayload) > 0 {
+		txVersion = 3
+		txType = 5
+		txExtraPayload, _ = hex.DecodeString(rpcData.CoinbasePayload)
+	}
+
+	txVersion = txVersion + (txType << 16)
+
 	txInPrevOutHash := ""
 	txInPrevOutIndex := 1<<32 - 1
 	txInSequence := 0
 
 	txTimestamp := make([]byte, 0)
 	if reward == "POS" {
-		txTimestamp = utils.PackUint32LE(uint32(rpcData.CurTime))
+		txTimestamp = utils.PackUint32LE(rpcData.CurTime)
 	}
 
 	bCoinbaseAuxFlags, err := hex.DecodeString(rpcData.CoinbaseAux.Flags)
@@ -169,6 +192,14 @@ func CreateGeneration(rpcData *daemonManager.GetBlockTemplate, publicKey, extraN
 		utils.PackUint32LE(uint32(txLockTime)),
 		txComment,
 	}, nil)
+
+	if txExtraPayload != nil && len(txExtraPayload) > 0 {
+		p2 = bytes.Join([][]byte{
+			p2,
+			utils.VarIntBytes(uint64(len(txExtraPayload))),
+			txExtraPayload,
+		}, nil)
+	}
 
 	return [][]byte{p1, p2}
 }

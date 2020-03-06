@@ -461,7 +461,7 @@ func (sc *Client) SendMiningJob(jobParams []interface{}) {
 	}
 
 	sc.SendJson(&daemonManager.JsonRpcRequest{
-		Id:     0,
+		Id:     nil,
 		Method: "mining.notify",
 		Params: params,
 	})

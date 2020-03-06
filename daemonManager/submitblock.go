@@ -9,7 +9,7 @@ import (
 // submitblock has no result
 func (dm *DaemonManager) SubmitBlock(blockHex string) {
 	var results []*JsonRpcResponse
-	if dm.Coin.NoSubmitMethod {
+	if dm.Coin.NoSubmitBlock {
 		_, results = dm.CmdAll("getblocktemplate", []interface{}{map[string]interface{}{"mode": "submit", "data": blockHex}})
 	} else {
 		_, results = dm.CmdAll("submitblock", []interface{}{blockHex})

@@ -3,11 +3,13 @@ package daemonManager
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"github.com/mining-pool/go-pool-server/config"
 	"github.com/mining-pool/go-pool-server/utils"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
 )
 
 type DaemonManager struct {
@@ -59,9 +61,11 @@ func (dm *DaemonManager) IsAllOnline() bool {
 func (dm *DaemonManager) DoHttpRequest(daemon *config.DaemonOptions, reqRawData []byte) (*http.Response, error) {
 	req, err := http.NewRequest("POST", daemon.URL(), bytes.NewReader(reqRawData))
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
-	req.SetBasicAuth(daemon.User, daemon.Password)
+	if daemon.User != "" {
+		req.SetBasicAuth(daemon.User, daemon.Password)
+	}
 	client := &http.Client{}
 	return client.Do(req)
 }
@@ -111,6 +115,9 @@ func (dm *DaemonManager) CmdAll(method string, params []interface{}) ([]*http.Re
 		if err != nil {
 			log.Fatal(err)
 		}
+		//if err := dm.CheckStatusCode(res.StatusCode); err != nil {
+		//	log.Println(err)
+		//}
 
 		responses = append(responses, res)
 
@@ -123,12 +130,39 @@ func (dm *DaemonManager) CmdAll(method string, params []interface{}) ([]*http.Re
 
 		err = json.Unmarshal(raw, &result)
 		if err != nil {
-			log.Fatal(err)
+			log.Panic("failed to unmarshal response body:", raw)
 		}
 		results = append(results, &result)
 	}
 
 	return responses, results
+}
+
+func (dm *DaemonManager) CheckStatusCode(statusCode int) error {
+	switch statusCode / 100 {
+	case 2:
+		return nil
+	case 4:
+		switch statusCode % 100 {
+		case 0:
+			return errors.New("daemon cannot understand the request")
+		case 1:
+			return errors.New("daemon requires authorization (have to login before request)")
+		case 3:
+			return errors.New("daemon rejected the request")
+
+		case 4:
+			return errors.New("daemon cannot find the resource requested")
+		case 13:
+			return errors.New("daemon cannot deal this large request")
+
+		}
+
+	case 5:
+		return errors.New("daemon internal error")
+	}
+
+	return errors.New("unknown status code:" + strconv.Itoa(statusCode))
 }
 
 func (dm *DaemonManager) Cmd(method string, params []interface{}) (*http.Response, *JsonRpcResponse, *config.DaemonOptions) {
@@ -146,6 +180,9 @@ func (dm *DaemonManager) Cmd(method string, params []interface{}) (*http.Respons
 		if err != nil {
 			log.Println(err)
 		}
+		//if err := dm.CheckStatusCode(res.StatusCode); err != nil {
+		//	log.Println(err)
+		//}
 
 		var result JsonRpcResponse
 		raw, err := ioutil.ReadAll(res.Body)

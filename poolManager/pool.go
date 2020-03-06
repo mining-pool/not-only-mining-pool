@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/mining-pool/go-pool-server/algorithm"
 	"github.com/mining-pool/go-pool-server/banningManager"
 	"github.com/mining-pool/go-pool-server/config"
 	"github.com/mining-pool/go-pool-server/daemonManager"
 	"github.com/mining-pool/go-pool-server/jobManager"
 	"github.com/mining-pool/go-pool-server/p2pManager"
+	"github.com/mining-pool/go-pool-server/storageManager"
 	"github.com/mining-pool/go-pool-server/stratum"
 	"github.com/mining-pool/go-pool-server/utils"
 	"log"
@@ -42,18 +42,23 @@ func NewPool(options *config.Options) *Pool {
 
 	_, validateAddress, daemon := dm.Cmd("validateaddress", []interface{}{options.PoolAddress.Address})
 	if validateAddress.Error != nil {
-		log.Fatal("ErrorCode with payment processing daemon: ", string(utils.Jsonify(daemon)), " error: ", utils.JsonifyIndentString(validateAddress.Error))
+		log.Panic("Error with payment processing daemon: ", string(utils.Jsonify(daemon)), " error: ", utils.JsonifyIndentString(validateAddress.Error))
 	}
 
-	_, result, _ := dm.Cmd("getaddressinfo", []interface{}{options.PoolAddress.Address})
+	validateAddressResult := daemonManager.BytesToValidateAddress(validateAddress.Result)
 
-	if result.Error != nil {
-		log.Fatal("ErrorCode with payment processing daemon, getaddressinfo failed ... ", utils.JsonifyIndentString(result.Error))
-	}
-
-	validateAddressResult := daemonManager.BytesToValidateAddress(result.Result)
-	if !validateAddressResult.Ismine {
-		log.Fatal("Daemon does not own poolManager address - payment processing can not be done with this daemon: ", utils.JsonifyIndentString(daemon))
+	if validateAddressResult.Pubkey == "" && validateAddressResult.Timestamp == 0 {
+		// LTC
+		_, getAddressInfoResult, _ := dm.Cmd("getaddressinfo", []interface{}{options.PoolAddress.Address})
+		if getAddressInfoResult.Error != nil {
+			log.Panic("Error with payment processing daemon, getaddressinfo failed ... ", utils.JsonifyIndentString(getAddressInfoResult.Error))
+		}
+		validateAddressResult = daemonManager.BytesToValidateAddress(getAddressInfoResult.Result)
+	} else {
+		// DASH
+		if !validateAddressResult.Ismine {
+			log.Panic("Error with payment processing daemon, getaddressinfo failed ... ", utils.JsonifyIndentString(validateAddress.Error))
+		}
 	}
 
 	_, getBalance, _ := dm.Cmd("getbalance", []interface{}{})
@@ -72,7 +77,9 @@ func NewPool(options *config.Options) *Pool {
 		log.Fatal("ErrorCode detecting number of satoshis in a coin, cannot do payment processing. Tried parsing: ", string(utils.Jsonify(getBalance)))
 	}
 
-	jm := jobManager.NewJobManager(options, validateAddressResult, dm)
+	storage := storageManager.NewStorage(options.Coin.Name, options.Storage)
+
+	jm := jobManager.NewJobManager(options, validateAddressResult, dm, storage)
 	bm := banningManager.NewBanningManager(options.Banning)
 
 	return &Pool{
@@ -257,7 +264,8 @@ func (p *Pool) DetectCoinData() {
 		p.Stats.Connections = getNetworkInfo.Connections
 	}
 
-	p.Stats.Difficulty = diff * algorithm.Multiplier
+	mul := 1 << p.Options.Algorithm.Multiplier
+	p.Stats.Difficulty = diff * float64(mul)
 }
 
 func (p *Pool) OutputPoolInfo() {
@@ -271,13 +279,15 @@ func (p *Pool) OutputPoolInfo() {
 	}
 
 	diff, _ := p.JobManager.CurrentJob.Difficulty.Float64()
+	mul := 1 << p.Options.Algorithm.Multiplier
+
 	infoLines := []string{
 		startMessage,
 		"Network Connected:\t" + network,
 		"Detected Reward Type:\t" + p.Options.Coin.Reward,
 		"Current Block Height:\t" + strconv.FormatInt(p.JobManager.CurrentJob.GetBlockTemplate.Height, 10),
 		"Current Connect Peers:\t" + strconv.Itoa(p.Stats.Connections),
-		"Current Block Diff:\t" + strconv.FormatFloat(diff*algorithm.Multiplier, 'f', 7, 64),
+		"Current Block Diff:\t" + strconv.FormatFloat(diff*float64(mul), 'f', 7, 64),
 		"Network Difficulty:\t" + strconv.FormatFloat(p.Stats.Difficulty, 'f', 7, 64),
 		"Network Hash Rate:\t" + utils.GetReadableHashRateString(p.Stats.NetworkHashrate),
 		"Stratum Port(s):\t" + string(utils.Jsonify(p.Stats.StratumPorts)),

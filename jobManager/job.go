@@ -192,9 +192,15 @@ func GetTransactionBytes(txs []*daemonManager.TxParams) [][]byte {
 	for i := 0; i < len(txs); i++ {
 		if txs[i].TxId != "" {
 			txHashes = append(txHashes, utils.Uint256BytesFromHash(txs[i].TxId))
-		} else {
-			txHashes = append(txHashes, utils.Uint256BytesFromHash(txs[i].Hash))
+			continue
 		}
+
+		if txs[i].Hash != "" {
+			txHashes = append(txHashes, utils.Uint256BytesFromHash(txs[i].Hash))
+			continue
+		}
+
+		log.Panic("no hash or txid in transactions params")
 	}
 
 	return append([][]byte{nil}, txHashes...)

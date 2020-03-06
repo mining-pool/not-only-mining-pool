@@ -1,15 +1,17 @@
 {
   "coin": {
     "name": "Litecoin",
-    "symbol": "LTC",
-    "algorithm": "scrypt"
+    "symbol": "LTC"
   },
-
+  "algorithm": {
+    "name": "scrypt",
+    "multiplier": 16,
+    "sha256dBlockHasher": true
+  },
   "poolAddress": {
     "address": "QPxrDq3sorCk8DWaYX2GeCkxoePhm1asyY",
     "type": "p2sh"
   },
-
   "rewardRecipients": [
     {
       "address": "QPxrDq3sorCk8DWaYX2GeCkxoePhm1asyY",

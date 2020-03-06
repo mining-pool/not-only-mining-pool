@@ -15,10 +15,14 @@ type Storage struct {
 	coin string
 }
 
-func NewStorage(coinName string, options config.RedisOptions) *Storage {
+func NewStorage(coinName string, options *config.RedisOptions) *Storage {
+	client := redis.NewClient(options.ToRedisOptions())
+	if client == nil {
+		log.Panic("failed to connect to the redis server. If you dont wanna db storage please delete redis config in config file")
+	}
 	return &Storage{
-		redis.NewClient(options.ToRedisOptions()),
-		coinName,
+		Client: client,
+		coin:   coinName,
 	}
 }
 

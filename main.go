@@ -15,19 +15,21 @@ const defaultConfigFileName = "config.json"
 var configFileName = flag.String("c", defaultConfigFileName, "configuration file for pool")
 
 func main() {
+	flag.Parse()
+
 	var conf config.Options
 	if !utils.FileExists(*configFileName) {
-		log.Fatal("the config file " + *configFileName + " does not exist")
+		log.Panic("the config file " + *configFileName + " does not exist")
 	}
 
 	f, err := os.Open(*configFileName)
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 
 	err = json.NewDecoder(f).Decode(&conf)
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 
 	p := poolManager.NewPool(&conf)

@@ -39,7 +39,7 @@ type JobManager struct {
 	NewBlockEvent chan *Job
 }
 
-func NewJobManager(options *config.Options, validateAddress *daemonManager.ValidateAddress, dm *daemonManager.DaemonManager) *JobManager {
+func NewJobManager(options *config.Options, validateAddress *daemonManager.ValidateAddress, dm *daemonManager.DaemonManager, storage *storageManager.Storage) *JobManager {
 	placeholder, _ := hex.DecodeString("f000000ff111111f")
 	extraNonce1Generator := NewExtraNonce1Generator()
 
@@ -52,8 +52,8 @@ func NewJobManager(options *config.Options, validateAddress *daemonManager.Valid
 		ValidJobs:             make(map[string]*Job),
 		CoinbaseHasher:        utils.Sha256d,
 		ValidateAddress:       validateAddress,
-
-		DaemonManager: dm,
+		Storage:               storage,
+		DaemonManager:         dm,
 	}
 }
 
@@ -64,6 +64,7 @@ func (jm *JobManager) Init(gbt *daemonManager.GetBlockTemplate) {
 func (jm *JobManager) ProcessShare(share *types.Share) {
 	//isValidBlock
 	if share.BlockHex != "" {
+		log.Println(share.BlockHex)
 		jm.DaemonManager.SubmitBlock(share.BlockHex)
 
 		isAccepted, tx := jm.CheckBlockAccepted(share.BlockHex)
@@ -130,16 +131,7 @@ func (jm *JobManager) CheckBlockAccepted(blockHash string) (isAccepted bool, tx 
 //}
 
 func (jm *JobManager) ProcessTemplate(rpcData *daemonManager.GetBlockTemplate) bool {
-	isNewBlock := jm.CurrentJob == nil
-	if !isNewBlock && strings.Compare(rpcData.PreviousBlockHash, jm.CurrentJob.GetBlockTemplate.PreviousBlockHash) != 0 {
-		isNewBlock = true
-
-		if rpcData.Height < jm.CurrentJob.GetBlockTemplate.Height {
-			return false
-		}
-	}
-
-	if !isNewBlock {
+	if jm.CurrentJob != nil && rpcData.Height < jm.CurrentJob.GetBlockTemplate.Height {
 		return false
 	}
 
@@ -267,11 +259,11 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 	}
 
 	headerBytes := job.SerializeHeader(merkleRoot, nTimeBytes, nonce) // in LE
-	headerHash := algorithm.Hash(headerBytes)
+	headerHash := algorithm.GetHashFunc(jm.Options.Algorithm.Name)(headerBytes)
 	headerHashBigInt := new(big.Int).SetBytes(utils.ReverseBytes(headerHash))
 
 	bigShareDiff := new(big.Float).Quo(
-		new(big.Float).SetInt(new(big.Int).Mul(algorithm.MaxTargetTruncated, big.NewInt(algorithm.Multiplier))),
+		new(big.Float).SetInt(new(big.Int).Mul(algorithm.MaxTargetTruncated, big.NewInt(1<<jm.Options.Algorithm.Multiplier))),
 		new(big.Float).SetInt(headerHashBigInt),
 	)
 	shareDiff, _ := bigShareDiff.Float64()
@@ -280,12 +272,12 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 	if job.Target.Cmp(headerHashBigInt) > 0 {
 		blockHex := hex.EncodeToString(job.SerializeBlock(headerBytes, coinbaseBytes))
 		var blockHash string
-		switch algorithm.Name {
-		case "scrypt": // litecoin
+		if jm.Options.Algorithm.SHA256dBlockHasher {
+			// LTC
 			blockHash = hex.EncodeToString(utils.ReverseBytes(utils.Sha256d(headerBytes)))
-		default:
-			blockHash = hex.EncodeToString(utils.ReverseBytes(algorithm.Hash(headerBytes)))
-
+		} else {
+			// DASH
+			blockHash = hex.EncodeToString(utils.ReverseBytes(algorithm.GetHashFunc(jm.Options.Algorithm.Name)(headerBytes)))
 		}
 
 		log.Println("Found Block: " + blockHash)

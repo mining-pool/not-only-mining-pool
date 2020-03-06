@@ -102,6 +102,7 @@ func (dm *DaemonManager) GetBlockTemplate() (getBlockTemplate *GetBlockTemplate,
 		return nil, errors.New(fmt.Sprint("getblocktemplate call failed for daemon instance ", instance, " with error ", result.Error))
 	}
 
+	log.Println(string(result.Result))
 	getBlockTemplate = BytesToGetBlockTemplate(result.Result)
 	if getBlockTemplate == nil {
 		return nil, errors.New(fmt.Sprint("getblocktemplate call failed for daemon instance ", instance, " with error ", getBlockTemplate))

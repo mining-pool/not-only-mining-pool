@@ -6,13 +6,8 @@ import (
 	"golang.org/x/crypto/scrypt"
 	"log"
 	"math/big"
+	"strings"
 )
-
-const (
-	Multiplier = 1 << 16 // Math.pow(2, 16)
-)
-
-const Name = "scrypt"
 
 // difficulty = MAX_TARGET / current_target.
 var (
@@ -20,8 +15,18 @@ var (
 	MaxTarget, _          = new(big.Int).SetString("00000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", 16)
 )
 
-func Hash(data []byte) []byte {
-	return X11Hash(data)
+func GetHashFunc(hashName string) func([]byte) []byte {
+	switch strings.ToLower(hashName) {
+	case "scrypt":
+		return ScryptHash
+	case "x11":
+		return X11Hash
+	case "sha256d":
+		return DoubleSha256Hash
+	default:
+		log.Panic(hashName, "is not officially supported yet, but you can easily add it with cgo binding by yourself")
+		return nil
+	}
 }
 
 // ScryptHash is the algorithm which litecoin uses as its PoW mining algorithm
@@ -36,7 +41,7 @@ func ScryptHash(data []byte) []byte {
 
 func X11Hash(data []byte) []byte {
 	dst := make([]byte, 32)
-	x11.New().Hash(dst, data)
+	x11.New().Hash(data, dst)
 	return dst
 }
 
