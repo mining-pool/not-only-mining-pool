@@ -21,8 +21,7 @@ type Options struct {
 
 	NoSubmitMethod bool `json:"noSubmitMethod"`
 
-	Testnet           bool   `json:"-"`
-	PoolAddressScript []byte `json:"-"` // not recommend to input from config
+	Testnet bool `json:"-"`
 }
 
 func (o *Options) TotalFeePercent() float64 {

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"github.com/maoxs2/go-bech32"
+	"log"
 	"reflect"
 	"testing"
 )
@@ -97,6 +99,24 @@ func TestP2SHAddressToScript(t *testing.T) {
 	addr := "QcGaxM7GsauRBS4CD2rzkE34HZci2kBeF4"
 
 	t.Log(hex.EncodeToString(P2SHAddressToScript(addr)))
+}
+
+func TestP2WSHAddressToScript(t *testing.T) {
+	addr := "tb1qphxtwvfxyjhq5ar2hn65eczg8u6stam2n7znx5"
+	str, decoded, err := bech32.Decode(addr)
+	if decoded == nil || err != nil {
+		log.Fatal("base58 decode failed for " + addr)
+	}
+	if len(decoded) == 0 || len(decoded) > 65 {
+		log.Fatal("invalid address length for " + addr)
+	}
+	t.Log(str)
+	witnessProgram, _ := bech32.ConvertBits(decoded[1:], 5, 8, true)
+
+	t.Log(len(decoded))
+	//publicKey := decoded[1:len(decoded)]
+
+	t.Log(hex.EncodeToString(witnessProgram))
 }
 
 func TestCommandStringBytes(t *testing.T) {

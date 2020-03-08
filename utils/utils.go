@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/maoxs2/go-bech32"
 	"github.com/mr-tron/base58"
 	"log"
 	"math/big"
@@ -298,7 +299,7 @@ func P2PKHAddressToScript(addr string) []byte {
 	}
 
 	if len(decoded) != 25 {
-		log.Fatal("invalid address length for " + addr)
+		log.Panic("invalid address length for " + addr)
 	}
 
 	publicKey := decoded[1 : len(decoded)-4]
@@ -317,7 +318,7 @@ func P2SHAddressToScript(addr string) []byte {
 	}
 
 	if len(decoded) != 25 {
-		log.Fatal("invalid address length for " + addr)
+		log.Panic("invalid address length for " + addr)
 	}
 
 	publicKey := decoded[1 : len(decoded)-4]
@@ -326,6 +327,22 @@ func P2SHAddressToScript(addr string) []byte {
 		{0xA9, 0x14},
 		publicKey,
 		{0x87},
+	}, nil)
+}
+
+func P2WSHAddressToScript(addr string) []byte {
+	_, decoded, err := bech32.Decode(addr)
+	if decoded == nil || err != nil {
+		log.Fatal("base58 decode failed for " + addr)
+	}
+	witnessProgram, err := bech32.ConvertBits(decoded[1:], 5, 8, true)
+	if err != nil {
+		log.Panic("")
+	}
+
+	return bytes.Join([][]byte{
+		{0x00, 0x14},
+		witnessProgram,
 	}, nil)
 }
 

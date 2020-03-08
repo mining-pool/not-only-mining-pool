@@ -79,7 +79,7 @@ func NewPool(options *config.Options) *Pool {
 
 	storage := storageManager.NewStorage(options.Coin.Name, options.Storage)
 
-	jm := jobManager.NewJobManager(options, validateAddressResult, dm, storage)
+	jm := jobManager.NewJobManager(options, dm, storage)
 	bm := banningManager.NewBanningManager(options.Banning)
 
 	return &Pool{
@@ -196,7 +196,7 @@ func (p *Pool) DetectCoinData() {
 	if !validateAddress.Isvalid {
 		log.Fatal("Daemon reports address is not valid")
 	}
-	p.Options.PoolAddressScript = jobManager.GetPoolAddressScript(p.Options.Coin.Reward, validateAddress)
+	//p.Options.PoolAddressScript = jobManager.GetPoolAddressScript(p.Options.Coin.Reward, validateAddress)
 	if p.Options.Coin.Reward == "POS" && validateAddress.Pubkey == "" {
 		log.Fatal("The address provided is not from the daemon wallet - this is required for POS coins.")
 	}

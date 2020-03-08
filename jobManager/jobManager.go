@@ -21,6 +21,8 @@ type JobCounter struct {
 }
 
 type JobManager struct {
+	PoolAddress *config.Recipient
+
 	Storage               *storageManager.Storage
 	Options               *config.Options
 	JobCounter            *JobCounter
@@ -31,19 +33,20 @@ type JobManager struct {
 	CurrentJob *Job
 	ValidJobs  map[string]*Job
 
-	CoinbaseHasher  func([]byte) []byte
-	ValidateAddress *daemonManager.ValidateAddress
+	CoinbaseHasher func([]byte) []byte
 
 	DaemonManager *daemonManager.DaemonManager
 
 	NewBlockEvent chan *Job
 }
 
-func NewJobManager(options *config.Options, validateAddress *daemonManager.ValidateAddress, dm *daemonManager.DaemonManager, storage *storageManager.Storage) *JobManager {
+func NewJobManager(options *config.Options, dm *daemonManager.DaemonManager, storage *storageManager.Storage) *JobManager {
 	placeholder, _ := hex.DecodeString("f000000ff111111f")
 	extraNonce1Generator := NewExtraNonce1Generator()
 
 	return &JobManager{
+		PoolAddress: options.PoolAddress,
+
 		Options:               options,
 		ExtraNonce1Generator:  extraNonce1Generator,
 		ExtraNoncePlaceholder: placeholder,
@@ -51,7 +54,6 @@ func NewJobManager(options *config.Options, validateAddress *daemonManager.Valid
 		CurrentJob:            nil,
 		ValidJobs:             make(map[string]*Job),
 		CoinbaseHasher:        utils.Sha256d,
-		ValidateAddress:       validateAddress,
 		Storage:               storage,
 		DaemonManager:         dm,
 	}
@@ -139,7 +141,7 @@ func (jm *JobManager) ProcessTemplate(rpcData *daemonManager.GetBlockTemplate) b
 	tmpBlockTemplate := NewJob(
 		utils.RandHexUint64(),
 		rpcData,
-		GetPoolAddressScript(jm.Options.Coin.Reward, jm.ValidateAddress),
+		jm.PoolAddress.GetScript(),
 		jm.ExtraNoncePlaceholder,
 		jm.Options.Coin.Reward,
 		jm.Options.Coin.TxMessages,
@@ -328,18 +330,18 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 	}
 }
 
-func GetPoolAddressScript(reward string, validateAddress *daemonManager.ValidateAddress) []byte {
-	switch reward {
-	case "POS":
-		return utils.PublicKeyToScript(validateAddress.Pubkey)
-	case "POW":
-		if validateAddress.Isscript {
-			return utils.P2SHAddressToScript(validateAddress.Address)
-		}
-		return utils.P2PKHAddressToScript(validateAddress.Address)
-	default:
-		// as POW
-		log.Fatal("unknown reward type: " + reward)
-		return nil
-	}
-}
+//func GetPoolAddressScript(reward string, validateAddress *daemonManager.ValidateAddress) []byte {
+//	switch reward {
+//	case "POS":
+//		return utils.PublicKeyToScript(validateAddress.Pubkey)
+//	case "POW":
+//		if validateAddress.Isscript {
+//			return utils.P2SHAddressToScript(validateAddress.Address)
+//		}
+//		return utils.P2PKHAddressToScript(validateAddress.Address)
+//	default:
+//		// as POW
+//		log.Fatal("unknown reward type: " + reward)
+//		return nil
+//	}
+//}

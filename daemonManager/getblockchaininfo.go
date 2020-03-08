@@ -7,23 +7,17 @@ import (
 )
 
 type GetBlockchainInfo struct {
-	Chain                string  `json:"chain"`
-	Blocks               int     `json:"blocks"`
-	Headers              int     `json:"headers"`
-	Bestblockhash        string  `json:"bestblockhash"`
-	Difficulty           float64 `json:"difficulty"`
-	Mediantime           int     `json:"mediantime"`
-	Verificationprogress float64 `json:"verificationprogress"`
-	Chainwork            string  `json:"chainwork"`
-	Pruned               bool    `json:"pruned"`
-	Softforks            []struct {
-		ID      string `json:"id"`
-		Version int    `json:"version"`
-		Reject  struct {
-			Status bool `json:"status"`
-		} `json:"reject"`
-	} `json:"softforks"`
-	Bip9Softforks struct {
+	Chain                string      `json:"chain"`
+	Blocks               int         `json:"blocks"`
+	Headers              int         `json:"headers"`
+	Bestblockhash        string      `json:"bestblockhash"`
+	Difficulty           float64     `json:"difficulty"`
+	Mediantime           int         `json:"mediantime"`
+	Verificationprogress float64     `json:"verificationprogress"`
+	Chainwork            string      `json:"chainwork"`
+	Pruned               bool        `json:"pruned"`
+	Softforks            interface{} // having difference between LTC & BTC, so use interface to suppress the error
+	Bip9Softforks        struct {
 		Csv struct {
 			Status    string `json:"status"`
 			StartTime int    `json:"startTime"`
@@ -61,7 +55,7 @@ func BytesToGetBlockchainInfo(b []byte) *GetBlockchainInfo {
 	var getBlockchainInfo GetBlockchainInfo
 	err := json.Unmarshal(b, &getBlockchainInfo)
 	if err != nil {
-		log.Fatal(fmt.Sprint("getBlockchainInfo call failed with error ", err))
+		log.Panic(fmt.Sprint("getblockchaininfo call failed with error: ", err))
 	}
 
 	return &getBlockchainInfo
