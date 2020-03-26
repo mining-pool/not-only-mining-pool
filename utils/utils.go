@@ -287,7 +287,6 @@ func PublicKeyToScript(key string) []byte {
 	copy(bKey[1:], b)
 
 	return bKey
-
 }
 
 // For POW coins - used to format wallet address for use in generation transaction's output
@@ -333,7 +332,7 @@ func P2SHAddressToScript(addr string) []byte {
 func P2WSHAddressToScript(addr string) []byte {
 	_, decoded, err := bech32.Decode(addr)
 	if decoded == nil || err != nil {
-		log.Fatal("base58 decode failed for " + addr)
+		log.Fatal("bech32 decode failed for " + addr)
 	}
 	witnessProgram, err := bech32.ConvertBits(decoded[1:], 5, 8, true)
 	if err != nil {
@@ -344,6 +343,14 @@ func P2WSHAddressToScript(addr string) []byte {
 		{0x00, 0x14},
 		witnessProgram,
 	}, nil)
+}
+
+func ScriptPubKeyToScript(addr string) []byte {
+	decoded, err := hex.DecodeString(addr)
+	if decoded == nil || err != nil {
+		log.Fatal("hex decode failed for " + addr)
+	}
+	return decoded
 }
 
 func HexDecode(b []byte) []byte {

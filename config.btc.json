@@ -9,13 +9,13 @@
     "sha256dBlockHasher": true
   },
   "poolAddress": {
-    "address": "tb1qphxtwvfxyjhq5ar2hn65eczg8u6stam2n7znx5",
-    "type": "p2wsh"
+    "address": "76a914892b70294fcea4be8bf41b6c8e69fe79743b08f388ac",
+    "type": "script"
   },
   "rewardRecipients": [
     {
-      "address": "tb1qphxtwvfxyjhq5ar2hn65eczg8u6stam2n7znx5",
-      "type": "p2wsh",
+      "address": "76a914892b70294fcea4be8bf41b6c8e69fe79743b08f388ac",
+      "type": "script",
       "percent": 0.01
     }
   ],

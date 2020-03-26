@@ -40,26 +40,36 @@ func NewPool(options *config.Options) *Pool {
 	dm := daemonManager.NewDaemonManager(options.Daemons, options.Coin)
 	dm.Check()
 
-	_, validateAddress, daemon := dm.Cmd("validateaddress", []interface{}{options.PoolAddress.Address})
-	if validateAddress.Error != nil {
-		log.Panic("Error with payment processing daemon: ", string(utils.Jsonify(daemon)), " error: ", utils.JsonifyIndentString(validateAddress.Error))
+	if options.PoolAddress.GetScript() == nil {
+		log.Panicf("failed to get poolAddress' script, check the address and type")
 	}
 
-	validateAddressResult := daemonManager.BytesToValidateAddress(validateAddress.Result)
-
-	if validateAddressResult.Pubkey == "" && validateAddressResult.Timestamp == 0 {
-		// LTC
-		_, getAddressInfoResult, _ := dm.Cmd("getaddressinfo", []interface{}{options.PoolAddress.Address})
-		if getAddressInfoResult.Error != nil {
-			log.Panic("Error with payment processing daemon, getaddressinfo failed ... ", utils.JsonifyIndentString(getAddressInfoResult.Error))
-		}
-		validateAddressResult = daemonManager.BytesToValidateAddress(getAddressInfoResult.Result)
-	} else {
-		// DASH
-		if !validateAddressResult.Ismine {
-			log.Panic("Error with payment processing daemon, getaddressinfo failed ... ", utils.JsonifyIndentString(validateAddress.Error))
+	for _, addr := range options.RewardRecipients {
+		if addr.GetScript() == nil {
+			log.Panicf("failed to get addr %s' script, check the address and type", addr.Address)
 		}
 	}
+
+	//_, validateAddress, daemon := dm.Cmd("validateaddress", []interface{}{options.PoolAddress.Address})
+	//if validateAddress.Error != nil {
+	//	log.Panic("Error with payment processing daemon: ", string(utils.Jsonify(daemon)), " error: ", utils.JsonifyIndentString(validateAddress.Error))
+	//}
+
+	//validateAddressResult := daemonManager.BytesToValidateAddress(validateAddress.Result)
+
+	//if validateAddressResult.Pubkey == "" && validateAddressResult.Timestamp == 0 {
+	//	// LTC
+	//	_, getAddressInfoResult, _ := dm.Cmd("getaddressinfo", []interface{}{options.PoolAddress.Address})
+	//	if getAddressInfoResult.Error != nil {
+	//		log.Panic("Error with payment processing daemon, getaddressinfo failed ... ", utils.JsonifyIndentString(getAddressInfoResult.Error))
+	//	}
+	//	validateAddressResult = daemonManager.BytesToValidateAddress(getAddressInfoResult.Result)
+	//} else {
+	//	// DASH
+	//	if !validateAddressResult.Ismine {
+	//		log.Panic("Error with payment processing daemon, getaddressinfo failed ... ", utils.JsonifyIndentString(validateAddress.Error))
+	//	}
+	//}
 
 	_, getBalance, _ := dm.Cmd("getbalance", []interface{}{})
 
@@ -187,19 +197,20 @@ func (p *Pool) DetectCoinData() {
 	}
 
 	// validateaddress
-	_, rpcResponse, _ = p.DaemonManager.Cmd("validateaddress", []interface{}{p.Options.PoolAddress.Address})
-	if rpcResponse.Error != nil || rpcResponse == nil {
-		log.Println("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
-		return
-	}
-	validateAddress := daemonManager.BytesToValidateAddress(rpcResponse.Result)
-	if !validateAddress.Isvalid {
-		log.Fatal("Daemon reports address is not valid")
-	}
+	//_, rpcResponse, _ = p.DaemonManager.Cmd("validateaddress", []interface{}{p.Options.PoolAddress.Address})
+	//if rpcResponse.Error != nil || rpcResponse == nil {
+	//	log.Println("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
+	//	return
+	//}
+	//validateAddress := daemonManager.BytesToValidateAddress(rpcResponse.Result)
+	//if !validateAddress.Isvalid {
+	//	log.Fatal("Daemon reports address is not valid")
+	//}
+
 	//p.Options.PoolAddressScript = jobManager.GetPoolAddressScript(p.Options.Coin.Reward, validateAddress)
-	if p.Options.Coin.Reward == "POS" && validateAddress.Pubkey == "" {
-		log.Fatal("The address provided is not from the daemon wallet - this is required for POS coins.")
-	}
+	//if p.Options.Coin.Reward == "POS" && validateAddress.Pubkey == "" {
+	//	log.Fatal("The address provided is not from the daemon wallet - this is required for POS coins.")
+	//}
 
 	// getmininginfo
 	_, rpcResponse, _ = p.DaemonManager.Cmd("getmininginfo", []interface{}{})
