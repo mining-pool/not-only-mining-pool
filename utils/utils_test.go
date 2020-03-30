@@ -11,7 +11,7 @@ import (
 )
 
 func TestSerializeNumber(t *testing.T) {
-	if bytes.Compare(SerializeNumber(100), []byte{0x01, 0x64}) != 0 {
+	if !bytes.Equal(SerializeNumber(100), []byte{0x01, 0x64}) {
 		fmt.Println(SerializeNumber(100))
 		t.Fail()
 	}
@@ -22,7 +22,7 @@ func TestSerializeNumber(t *testing.T) {
 }
 
 func TestSerializeString(t *testing.T) {
-	if bytes.Compare(SerializeString("HelloWorld"), []byte{0x0a, 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x57, 0x6f, 0x72, 0x6c, 0x64}) != 0 {
+	if !bytes.Equal(SerializeString("HelloWorld"), []byte{0x0a, 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x57, 0x6f, 0x72, 0x6c, 0x64}) {
 		fmt.Println(SerializeString("HelloWorld"))
 		t.Fail()
 	}
@@ -44,7 +44,7 @@ func TestReverseBytes(t *testing.T) {
 
 func TestUint256BytesFromHash(t *testing.T) {
 	result, _ := hex.DecodeString("691938264876d1078051da4e30ec0643262e8b93fca661f525fe7122b38d5f18")
-	if bytes.Compare(Uint256BytesFromHash(hex.EncodeToString(Sha256([]byte("Hello")))), result) != 0 {
+	if !bytes.Equal(Uint256BytesFromHash(hex.EncodeToString(Sha256([]byte("Hello")))), result) {
 		t.Fail()
 	}
 }

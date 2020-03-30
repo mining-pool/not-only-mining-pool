@@ -27,15 +27,15 @@ type Pool struct {
 
 	StratumServer *stratum.Server
 
-	Options                *config.Options
-	Magnitude              uint64
-	CoinPrecision          int
-	HasGetInfo             bool
-	Stats                  *Stats
-	BlockPollingIntervalCh <-chan time.Time
-	Recipients             []*config.Recipient
-	ProtocolVersion        int
-	APIServer              *api.Server
+	Options                    *config.Options
+	Magnitude                  uint64
+	CoinPrecision              int
+	HasGetInfo                 bool
+	Stats                      *Stats
+	BlockPollingIntervalTicker *time.Ticker
+	Recipients                 []*config.Recipient
+	ProtocolVersion            int
+	APIServer                  *api.Server
 }
 
 func NewPool(options *config.Options) *Pool {
@@ -121,20 +121,18 @@ func (p *Pool) SetupP2PBlockNotify() {
 
 	go func() {
 		for {
-			select {
-			case blockHash, ok := <-p.P2PManager.BlockNotifyCh:
-				if !ok {
-					log.Println("Block notify is stopped!")
-					return
-				}
+			blockHash, ok := <-p.P2PManager.BlockNotifyCh
+			if !ok {
+				log.Println("Block notify is stopped!")
+				return
+			}
 
-				if p.JobManager.CurrentJob != nil && blockHash != p.JobManager.CurrentJob.GetBlockTemplate.PreviousBlockHash {
-					gbt, err := p.DaemonManager.GetBlockTemplate()
-					if err != nil {
-						log.Println("p2p block notify failed getting block template: ", err)
-					}
-					p.JobManager.ProcessTemplate(gbt)
+			if p.JobManager.CurrentJob != nil && blockHash != p.JobManager.CurrentJob.GetBlockTemplate.PreviousBlockHash {
+				gbt, err := p.DaemonManager.GetBlockTemplate()
+				if err != nil {
+					log.Println("p2p block notify failed getting block template: ", err)
 				}
+				p.JobManager.ProcessTemplate(gbt)
 			}
 		}
 	}()
@@ -293,25 +291,24 @@ func (p *Pool) SetupBlockPolling() {
 	}
 
 	pollingInterval := time.Duration(p.Options.BlockRefreshInterval) * time.Second
-	p.BlockPollingIntervalCh = time.Tick(pollingInterval)
+	p.BlockPollingIntervalTicker = time.NewTicker(pollingInterval)
 
 	go func() {
 		for {
-			select {
-			case _, ok := <-p.BlockPollingIntervalCh:
-				if !ok {
-					log.Println("Block polling is stopped!")
-					return
-				}
+			_, ok := <-p.BlockPollingIntervalTicker.C
+			if !ok {
+				log.Println("Block polling is stopped!")
+				p.BlockPollingIntervalTicker.Stop()
+				return
+			}
 
-				gbt, err := p.DaemonManager.GetBlockTemplate()
-				if err != nil {
-					log.Println("Block notify error getting block template for "+p.Options.Coin.Name, err)
-				}
+			gbt, err := p.DaemonManager.GetBlockTemplate()
+			if err != nil {
+				log.Println("Block notify error getting block template for "+p.Options.Coin.Name, err)
+			}
 
-				if gbt != nil {
-					p.JobManager.ProcessTemplate(gbt)
-				}
+			if gbt != nil {
+				p.JobManager.ProcessTemplate(gbt)
 			}
 		}
 	}()

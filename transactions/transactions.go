@@ -193,7 +193,7 @@ func CreateGeneration(rpcData *daemonManager.GetBlockTemplate, publicKey, extraN
 		txComment,
 	}, nil)
 
-	if txExtraPayload != nil && len(txExtraPayload) > 0 {
+	if len(txExtraPayload) > 0 {
 		p2 = bytes.Join([][]byte{
 			p2,
 			utils.VarIntBytes(uint64(len(txExtraPayload))),

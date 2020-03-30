@@ -37,19 +37,16 @@ func (s *Server) Serve() {
 func (s *Server) indexFunc(writer http.ResponseWriter, _ *http.Request) {
 
 	raw, _ := json.Marshal([]string{"/pool", "/miner"})
-	writer.Write(raw)
-	return
+	_, _ = writer.Write(raw)
 }
 
 func (s *Server) poolFunc(writer http.ResponseWriter, request *http.Request) {
 
 }
 
-func (s *Server) configFunc(writer http.ResponseWriter, request *http.Request) {
+func (s *Server) configFunc(writer http.ResponseWriter, _ *http.Request) {
 	raw, _ := json.Marshal(s.options)
-	writer.Write(raw)
-
-	return
+	_, _ = writer.Write(raw)
 }
 
 func (s *Server) minerFunc(writer http.ResponseWriter, request *http.Request) {

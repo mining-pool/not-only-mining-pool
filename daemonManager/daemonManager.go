@@ -165,7 +165,7 @@ func (dm *DaemonManager) CheckStatusCode(statusCode int) error {
 	return errors.New("unknown status code:" + strconv.Itoa(statusCode))
 }
 
-func (dm *DaemonManager) Cmd(method string, params []interface{}) (*http.Response, *JsonRpcResponse, *config.DaemonOptions) {
+func (dm *DaemonManager) Cmd(method string, params []interface{}) (*config.DaemonOptions, *JsonRpcResponse, *http.Response) {
 	for i := range dm.Daemons {
 		reqRawData, err := json.Marshal(map[string]interface{}{
 			"id":     utils.RandPositiveInt64(),
@@ -195,7 +195,7 @@ func (dm *DaemonManager) Cmd(method string, params []interface{}) (*http.Respons
 		if err != nil {
 			log.Println(err)
 		}
-		return res, &result, dm.Daemons[i]
+		return dm.Daemons[i], &result, res
 	}
 
 	return nil, nil, nil

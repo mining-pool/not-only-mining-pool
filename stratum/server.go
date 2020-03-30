@@ -25,7 +25,8 @@ type Server struct {
 	SubscriptionCounter *SubscriptionCounter
 	BanningManager      *banningManager.BanningManager
 
-	RebroadcastTimeoutCh <-chan time.Time
+	rebroadcastTicker *time.Ticker
+	tickerReset       chan struct{}
 }
 
 func NewStratumServer(options *config.Options, jm *jobManager.JobManager, bm *banningManager.BanningManager) *Server {
@@ -68,10 +69,14 @@ func (ss *Server) Init() (portStarted []int) {
 	}
 
 	go func() {
-		ss.RebroadcastTimeoutCh = time.Tick(time.Duration(ss.Options.JobRebroadcastTimeout) * time.Second)
+		ss.tickerReset = make(chan struct{})
+		ss.rebroadcastTicker = time.NewTicker(time.Duration(ss.Options.JobRebroadcastTimeout) * time.Second)
+		defer ss.rebroadcastTicker.Stop()
 		for {
 			select {
-			case <-ss.RebroadcastTimeoutCh:
+			case <-ss.tickerReset:
+				ss.rebroadcastTicker = time.NewTicker(time.Duration(ss.Options.JobRebroadcastTimeout) * time.Second)
+			case <-ss.rebroadcastTicker.C:
 				ss.BroadcastMiningJobs(ss.JobManager.CurrentJob.GetJobParams())
 			}
 		}
@@ -102,12 +107,10 @@ func (ss *Server) HandleNewClient(socket net.Conn) []byte {
 
 	go func() {
 		for {
-			select {
-			case <-client.SocketClosedEvent:
-				log.Println("socket closed")
-				ss.RemoveStratumClientBySubscriptionId(subscriptionId)
-				// client.disconnected
-			}
+			<-client.SocketClosedEvent
+			log.Println("socket closed")
+			ss.RemoveStratumClientBySubscriptionId(subscriptionId)
+			// client.disconnected
 		}
 	}()
 
@@ -117,12 +120,11 @@ func (ss *Server) HandleNewClient(socket net.Conn) []byte {
 }
 
 func (ss *Server) BroadcastMiningJobs(jobParams []interface{}) {
-	log.Println("Start broadcasting due to rebroadcast timeout")
+	log.Println("broadcasting job params")
 	for clientId := range ss.StratumClients {
 		ss.StratumClients[clientId].SendMiningJob(jobParams)
 	}
-
-	ss.RebroadcastTimeoutCh = time.Tick(time.Duration(ss.Options.JobRebroadcastTimeout) * time.Second) // clearTimeout
+	ss.tickerReset <- struct{}{}
 }
 
 func (ss *Server) RemoveStratumClientBySubscriptionId(subscriptionId []byte) {

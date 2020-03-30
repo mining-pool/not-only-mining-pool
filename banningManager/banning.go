@@ -19,14 +19,14 @@ func NewBanningManager(options *config.BanningOptions) *BanningManager {
 
 func (bm *BanningManager) Init() {
 	go func() {
-		ch := time.Tick(time.Duration(bm.Options.PurgeInterval) * time.Second)
+		ticker := time.NewTicker(time.Duration(bm.Options.PurgeInterval) * time.Second)
+		defer ticker.Stop()
+
 		for {
-			select {
-			case <-ch:
-				for ip, banTime := range bm.BannedIPList {
-					if time.Now().Sub(*banTime) > time.Duration(bm.Options.Time)*time.Second {
-						delete(bm.BannedIPList, ip)
-					}
+			<-ticker.C
+			for ip, banTime := range bm.BannedIPList {
+				if time.Since(*banTime) > time.Duration(bm.Options.Time)*time.Second {
+					delete(bm.BannedIPList, ip)
 				}
 			}
 		}
@@ -36,7 +36,7 @@ func (bm *BanningManager) Init() {
 func (bm *BanningManager) CheckBan(strRemoteAddr string) (shouldCloseSocket bool) {
 	if bm.BannedIPList[strRemoteAddr] != nil {
 		bannedTime := bm.BannedIPList[strRemoteAddr]
-		bannedTimeAgo := time.Now().Sub(*bannedTime)
+		bannedTimeAgo := time.Since(*bannedTime)
 		timeLeft := time.Duration(bm.Options.Time)*time.Second - bannedTimeAgo
 		if timeLeft > 0 {
 			return true

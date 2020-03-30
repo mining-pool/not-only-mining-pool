@@ -89,7 +89,7 @@ func (sc *Client) ShouldBan(shareValid bool) bool {
 				sc.BanningManager.AddBannedIP(sc.RemoteAddress.String())
 				log.Println("closed socket", sc.WorkerName, " due to shares bad percent reached the banning invalid percent threshold")
 				sc.SocketClosedEvent <- struct{}{}
-				sc.Socket.Close()
+				_ = sc.Socket.Close()
 				return true
 			}
 		}
@@ -106,24 +106,19 @@ func (sc *Client) HandleMessage(message *daemonManager.JsonRpcRequest) {
 	switch message.Method {
 	case "mining.subscribe":
 		sc.HandleSubscribe(message)
-		break
 	case "mining.authorize":
 		sc.HandleAuthorize(message, true)
-		break
 	case "mining.submit":
 		sc.LastActivity = time.Now()
 		sc.HandleSubmit(message)
-		break
 	case "mining.get_transactions":
 		sc.SendJson(&daemonManager.JsonRpcResponse{
 			Id:     0,
 			Result: nil,
 			Error:  nil, // TODO: Support this
 		})
-		break
 	default:
 		log.Println("unknownStratumMethod", string(utils.Jsonify(message)))
-		break
 	}
 }
 
@@ -191,7 +186,7 @@ func (sc *Client) HandleAuthorize(message *daemonManager.JsonRpcRequest, replyTo
 
 	if disconnect {
 		log.Println("closed socket", sc.WorkerName, "due to failed to authorize the miner")
-		sc.Socket.Close()
+		_ = sc.Socket.Close()
 		sc.SocketClosedEvent <- struct{}{}
 	}
 
@@ -355,7 +350,7 @@ func (sc *Client) SetupSocket() {
 				if len(raw) > 10240 {
 					//socketFlooded
 					log.Println("Flooding message from", sc.GetLabel(), ":", string(raw))
-					sc.Socket.Close()
+					_ = sc.Socket.Close()
 					sc.SocketClosedEvent <- struct{}{}
 					return
 				}
@@ -369,7 +364,7 @@ func (sc *Client) SetupSocket() {
 				if err != nil {
 					if !sc.Options.TCPProxyProtocol {
 						log.Println("Malformed message from", sc.GetLabel(), ":", string(raw))
-						sc.Socket.Close()
+						_ = sc.Socket.Close()
 						sc.SocketClosedEvent <- struct{}{}
 					}
 
@@ -435,10 +430,10 @@ func (sc *Client) SendDifficulty(diff *big.Float) bool {
 
 func (sc *Client) SendMiningJob(jobParams []interface{}) {
 	log.Println("sending job:", string(utils.Jsonify(jobParams)))
-	lastActivityAgo := time.Now().Sub(sc.LastActivity)
+	lastActivityAgo := time.Since(sc.LastActivity)
 	if lastActivityAgo > time.Duration(sc.Options.ConnectionTimeout)*time.Second {
 		log.Println("closed socket", sc.WorkerName, "due to activity timeout")
-		sc.Socket.Close()
+		_ = sc.Socket.Close()
 		sc.SocketClosedEvent <- struct{}{}
 		return
 	}

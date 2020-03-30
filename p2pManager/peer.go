@@ -116,14 +116,18 @@ func (p *Peer) SetupMessageParser() {
 				continue
 			}
 
-			if bytes.Compare(header[0:4], p.Magic) != 0 {
+			if !bytes.Equal(header[0:4], p.Magic) {
 				continue
 			}
 
 			payload := make([]byte, binary.LittleEndian.Uint32(header[16:20]))
 			_, err = p.Conn.Read(payload)
+			if err != nil {
+				log.Println(err)
+				continue
+			}
 
-			if bytes.Compare(utils.Sha256d(payload)[0:4], header[20:24]) == 0 {
+			if bytes.Equal(utils.Sha256d(payload)[0:4], header[20:24]) {
 				go p.HandleMessage(header[4:16], payload)
 			}
 		}
@@ -136,16 +140,13 @@ func (p *Peer) HandleMessage(command, payload []byte) {
 	switch string(command) {
 	case string(p.Commands["inv"]):
 		p.HandleInv(payload)
-		break
 	case string(p.Commands["verack"]):
 		if !p.Verack {
 			p.Verack = true
 			// connected
 		}
-		break
 	case string(p.Commands["version"]):
 		p.SendMessage(p.Commands["verack"], make([]byte, 0))
-		break
 	default:
 		break
 	}
@@ -167,16 +168,13 @@ func (p *Peer) HandleInv(payload []byte) {
 	for count--; count != 0; count-- {
 		switch binary.LittleEndian.Uint32(buf) {
 		case p.InvCodes["error"]:
-			break
 		case p.InvCodes["tx"]:
 			//tx := hex.EncodeToString(buf[4:36])
-			break
 		case p.InvCodes["block"]:
 			block := hex.EncodeToString(buf[4:36])
 			log.Println("block found: ", block)
 			// block found
 			p.ProcessBlockNotify(block)
-			break
 		}
 		buf = buf[36:]
 	}

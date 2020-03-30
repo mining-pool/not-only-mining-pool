@@ -164,7 +164,6 @@ func (jm *JobManager) ProcessTemplate(rpcData *daemonManager.GetBlockTemplate) {
 	}
 
 	jm.CreateNewJob(rpcData)
-	return
 }
 
 func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, extraNonce1 []byte, hexExtraNonce2, hexNTime, hexNonce string, ipAddr net.Addr, workerName string) (ok bool, share *types.Share) {

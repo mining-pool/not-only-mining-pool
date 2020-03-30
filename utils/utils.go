@@ -232,7 +232,7 @@ func Sha256d(b []byte) []byte {
 
 func BytesIndexOf(data [][]byte, element []byte) int {
 	for k, v := range data {
-		if bytes.Compare(element, v) == 0 {
+		if bytes.Equal(element, v) {
 			return k
 		}
 	}
@@ -370,8 +370,6 @@ func HexEncode(b []byte) []byte {
 	return dst
 }
 
-var nullBytes, _ = json.Marshal(json.RawMessage("null"))
-
 func Jsonify(i interface{}) []byte {
 	r, err := json.Marshal(i)
 	if err != nil {
@@ -389,26 +387,6 @@ func JsonifyIndentString(i interface{}) string {
 		return ""
 	}
 	return string(r)
-}
-
-func IsNull(b json.RawMessage) bool {
-	var v interface{}
-	_ = json.Unmarshal(b, &v)
-	if v == nil {
-		return true
-	}
-
-	return false
-}
-
-func IsNotNull(b json.RawMessage) bool {
-	var v interface{}
-	_ = json.Unmarshal(b, &v)
-	if v == nil {
-		return false
-	}
-
-	return true
 }
 
 func SatoshisToCoins(satoshis uint64, magnitude int, coinPrecision int) float64 {
