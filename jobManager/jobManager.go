@@ -66,14 +66,14 @@ func (jm *JobManager) Init(gbt *daemonManager.GetBlockTemplate) {
 func (jm *JobManager) ProcessShare(share *types.Share) {
 	//isValidBlock
 	if share.BlockHex != "" {
-		log.Println(share.BlockHex)
+		log.Printf("submitting new Block: %s", share.BlockHex)
 		jm.DaemonManager.SubmitBlock(share.BlockHex)
 
 		isAccepted, tx := jm.CheckBlockAccepted(share.BlockHex)
 		share.TxHash = tx
 		if isAccepted {
 			go jm.Storage.PutShare(share)
-			log.Println("Block Accepted: ")
+			log.Printf("Block %s Accepted! tx: %s. Wait for pendding!", share.BlockHex, share.TxHash)
 		}
 
 		gbt, err := jm.DaemonManager.GetBlockTemplate()
@@ -82,10 +82,8 @@ func (jm *JobManager) ProcessShare(share *types.Share) {
 		}
 		jm.ProcessTemplate(gbt)
 		return
-	}
-
-	// isValidShare
-	if share.ErrorCode == 0 {
+	} else if share.ErrorCode == 0 {
+		// notValidBlock but isValidShare
 		go jm.Storage.PutShare(share)
 		return
 	}
@@ -116,28 +114,28 @@ func (jm *JobManager) CheckBlockAccepted(blockHash string) (isAccepted bool, tx 
 	return isAccepted, ""
 }
 
-//func (jm *JobManager) UpdateCurrentJob(rpcData *daemonManager.GetBlockTemplate) {
-//	tmpBlockTemplate := NewJob(
-//		jm.JobCounter.Next(),
-//		rpcData,
-//		GetPoolAddressScript(jm.Options.Coin.Reward, jm.ValidateAddress),
-//		jm.ExtraNoncePlaceholder,
-//		jm.Options.Coin.Reward,
-//		jm.Options.Coin.TxMessages,
-//		jm.Options.RewardRecipients,
-//	)
-//
-//	jm.CurrentJob = tmpBlockTemplate
-//	//jm.UpdateBlockEvent <- tmpBlockTemplate
-//	jm.ValidJobs[tmpBlockTemplate.JobId] = tmpBlockTemplate
-//}
+// Update updates the job when mining the same height but tx changes
+func (jm *JobManager) UpdateCurrentJob(rpcData *daemonManager.GetBlockTemplate) {
+	tmpBlockTemplate := NewJob(
+		jm.CurrentJob.JobId,
+		rpcData,
+		jm.PoolAddress.GetScript(),
+		jm.ExtraNoncePlaceholder,
+		jm.Options.Coin.Reward,
+		jm.Options.Coin.TxMessages,
+		jm.Options.RewardRecipients,
+	)
 
-func (jm *JobManager) ProcessTemplate(rpcData *daemonManager.GetBlockTemplate) bool {
-	if jm.CurrentJob != nil && rpcData.Height < jm.CurrentJob.GetBlockTemplate.Height {
-		return false
-	}
+	jm.CurrentJob = tmpBlockTemplate
+	jm.ValidJobs[tmpBlockTemplate.JobId] = tmpBlockTemplate
 
-	log.Println("New Block: ", string(utils.Jsonify(rpcData)))
+	log.Println("Job updated")
+}
+
+// CreateNewJob creates a new job when mining new height
+func (jm *JobManager) CreateNewJob(rpcData *daemonManager.GetBlockTemplate) {
+	// creates a new job when mining new height
+
 	tmpBlockTemplate := NewJob(
 		utils.RandHexUint64(),
 		rpcData,
@@ -151,7 +149,22 @@ func (jm *JobManager) ProcessTemplate(rpcData *daemonManager.GetBlockTemplate) b
 	jm.CurrentJob = tmpBlockTemplate
 	jm.ValidJobs[tmpBlockTemplate.JobId] = tmpBlockTemplate
 
-	return true
+	log.Println("New Job (Block) from blocktemplate")
+}
+
+// ProcessTemplate handles the template
+func (jm *JobManager) ProcessTemplate(rpcData *daemonManager.GetBlockTemplate) {
+	if jm.CurrentJob != nil && rpcData.Height < jm.CurrentJob.GetBlockTemplate.Height {
+		return
+	}
+
+	if jm.CurrentJob != nil && rpcData.Height == jm.CurrentJob.GetBlockTemplate.Height {
+		jm.UpdateCurrentJob(rpcData)
+		return
+	}
+
+	jm.CreateNewJob(rpcData)
+	return
 }
 
 func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, extraNonce1 []byte, hexExtraNonce2, hexNTime, hexNonce string, ipAddr net.Addr, workerName string) (ok bool, share *types.Share) {

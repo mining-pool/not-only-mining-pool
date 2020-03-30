@@ -10,7 +10,6 @@ func TestNewPeer(t *testing.T) {
 	var options config.P2POptions
 	json.Unmarshal([]byte(`
 {
-    "enabled": true,
     "host": "0.0.0.0",
     "port": 19335,
     "magic": "fdd2c8f1",

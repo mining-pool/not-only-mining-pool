@@ -28,7 +28,6 @@
   "emitInvalidBlockHashes": false,
   "tcpProxyProtocol": false,
   "banning": {
-    "enabled": true,
     "time": 600,
     "invalidPercent": 50,
     "checkThreshold": 500,
@@ -57,7 +56,6 @@
   }],
 
   "p2p": {
-    "enabled": true,
     "host": "127.0.0.1",
     "port": 19335,
     "magic": "fdd2c8f1",
@@ -65,7 +63,6 @@
   },
 
   "api": {
-    "enabled": true,
     "host": "0.0.0.0",
     "port": 20000
   },

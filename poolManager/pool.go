@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/mining-pool/go-pool-server/api"
 	"github.com/mining-pool/go-pool-server/banningManager"
 	"github.com/mining-pool/go-pool-server/config"
 	"github.com/mining-pool/go-pool-server/daemonManager"
@@ -34,6 +35,7 @@ type Pool struct {
 	BlockPollingIntervalCh <-chan time.Time
 	Recipients             []*config.Recipient
 	ProtocolVersion        int
+	APIServer              *api.Server
 }
 
 func NewPool(options *config.Options) *Pool {
@@ -49,27 +51,6 @@ func NewPool(options *config.Options) *Pool {
 			log.Panicf("failed to get addr %s' script, check the address and type", addr.Address)
 		}
 	}
-
-	//_, validateAddress, daemon := dm.Cmd("validateaddress", []interface{}{options.PoolAddress.Address})
-	//if validateAddress.Error != nil {
-	//	log.Panic("Error with payment processing daemon: ", string(utils.Jsonify(daemon)), " error: ", utils.JsonifyIndentString(validateAddress.Error))
-	//}
-
-	//validateAddressResult := daemonManager.BytesToValidateAddress(validateAddress.Result)
-
-	//if validateAddressResult.Pubkey == "" && validateAddressResult.Timestamp == 0 {
-	//	// LTC
-	//	_, getAddressInfoResult, _ := dm.Cmd("getaddressinfo", []interface{}{options.PoolAddress.Address})
-	//	if getAddressInfoResult.Error != nil {
-	//		log.Panic("Error with payment processing daemon, getaddressinfo failed ... ", utils.JsonifyIndentString(getAddressInfoResult.Error))
-	//	}
-	//	validateAddressResult = daemonManager.BytesToValidateAddress(getAddressInfoResult.Result)
-	//} else {
-	//	// DASH
-	//	if !validateAddressResult.Ismine {
-	//		log.Panic("Error with payment processing daemon, getaddressinfo failed ... ", utils.JsonifyIndentString(validateAddress.Error))
-	//	}
-	//}
 
 	_, getBalance, _ := dm.Cmd("getbalance", []interface{}{})
 
@@ -91,11 +72,13 @@ func NewPool(options *config.Options) *Pool {
 
 	jm := jobManager.NewJobManager(options, dm, storage)
 	bm := banningManager.NewBanningManager(options.Banning)
+	s := api.NewAPIServer(options)
 
 	return &Pool{
 		Options:       options,
 		DaemonManager: dm,
 		JobManager:    jm,
+		APIServer:     s,
 
 		StratumServer: stratum.NewStratumServer(options, jm, bm),
 		Magnitude:     uint64(magnitude),
@@ -123,6 +106,8 @@ func (p *Pool) Init() {
 	p.JobManager.Init(initGBT)
 
 	p.StartStratumServer()
+	p.APIServer.Serve()
+
 	p.OutputPoolInfo()
 }
 
@@ -146,7 +131,7 @@ func (p *Pool) SetupP2PBlockNotify() {
 				if p.JobManager.CurrentJob != nil && blockHash != p.JobManager.CurrentJob.GetBlockTemplate.PreviousBlockHash {
 					gbt, err := p.DaemonManager.GetBlockTemplate()
 					if err != nil {
-						log.Println("Block notify error getting block template: ", err)
+						log.Println("p2p block notify failed getting block template: ", err)
 					}
 					p.JobManager.ProcessTemplate(gbt)
 				}
@@ -196,22 +181,6 @@ func (p *Pool) DetectCoinData() {
 		log.Println(reflect.ValueOf(getDifficulty).Kind())
 	}
 
-	// validateaddress
-	//_, rpcResponse, _ = p.DaemonManager.Cmd("validateaddress", []interface{}{p.Options.PoolAddress.Address})
-	//if rpcResponse.Error != nil || rpcResponse == nil {
-	//	log.Println("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
-	//	return
-	//}
-	//validateAddress := daemonManager.BytesToValidateAddress(rpcResponse.Result)
-	//if !validateAddress.Isvalid {
-	//	log.Fatal("Daemon reports address is not valid")
-	//}
-
-	//p.Options.PoolAddressScript = jobManager.GetPoolAddressScript(p.Options.Coin.Reward, validateAddress)
-	//if p.Options.Coin.Reward == "POS" && validateAddress.Pubkey == "" {
-	//	log.Fatal("The address provided is not from the daemon wallet - this is required for POS coins.")
-	//}
-
 	// getmininginfo
 	_, rpcResponse, _ = p.DaemonManager.Cmd("getmininginfo", []interface{}{})
 	if rpcResponse.Error != nil || rpcResponse == nil {
@@ -228,9 +197,9 @@ func (p *Pool) DetectCoinData() {
 	}
 
 	if rpcResponse.Error.Message == "Method not found" {
-		p.Options.NoSubmitMethod = true
+		p.Options.Coin.NoSubmitBlock = true
 	} else if rpcResponse.Error.Code == -1 {
-		p.Options.NoSubmitMethod = false
+		p.Options.Coin.NoSubmitBlock = false
 	} else {
 		log.Fatal("Could not detect block submission RPC method, " + utils.JsonifyIndentString(rpcResponse))
 	}
@@ -241,15 +210,11 @@ func (p *Pool) DetectCoinData() {
 		return
 	}
 
-	if p.Options.Coin.NoGetBlockchainInfo {
-		_, rpcResponse, _ := p.DaemonManager.Cmd("getinfo", []interface{}{})
-		if rpcResponse.Error != nil || rpcResponse == nil {
-			log.Println("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
-			return
-		}
+	_, rpcResponse, _ = p.DaemonManager.Cmd("getinfo", []interface{}{})
+	if rpcResponse.Error == nil && rpcResponse != nil {
 		getInfo := daemonManager.BytesToGetInfo(rpcResponse.Result)
 
-		p.Options.Testnet = getInfo.Testnet
+		p.Options.Coin.Testnet = getInfo.Testnet
 		p.ProtocolVersion = getInfo.Protocolversion
 		//diff = getInfo.Difficulty
 
@@ -268,7 +233,7 @@ func (p *Pool) DetectCoinData() {
 			return
 		}
 		getBlockchainInfo := daemonManager.BytesToGetBlockchainInfo(rpcResponse.Result)
-		p.Options.Testnet = strings.Contains(getBlockchainInfo.Chain, "test")
+		p.Options.Coin.Testnet = strings.Contains(getBlockchainInfo.Chain, "test")
 		p.ProtocolVersion = getNetworkInfo.Protocolversion
 		//diff = getBlockchainInfo.Difficulty
 
@@ -283,7 +248,7 @@ func (p *Pool) OutputPoolInfo() {
 	startMessage := "Stratum Pool Server Started for " + p.Options.Coin.Name + " [" + strings.ToUpper(p.Options.Coin.Symbol) + "] "
 
 	var network string
-	if p.Options.Testnet {
+	if p.Options.Coin.Testnet {
 		network = "Testnet"
 	} else {
 		network = "Mainnet"

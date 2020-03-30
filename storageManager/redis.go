@@ -27,11 +27,6 @@ func NewStorage(coinName string, options *config.RedisOptions) *Storage {
 }
 
 func (s *Storage) PutShare(share *types.Share) {
-	//raw, err := json.Marshal(share)
-	//if err != nil {
-	//	log.Panicln(err)
-	//}
-
 	now := time.Now().Unix()
 	strNow := strconv.FormatInt(now, 10)
 
@@ -47,7 +42,6 @@ func (s *Storage) PutShare(share *types.Share) {
 				strNow,
 			}, ":"),
 		})
-
 	} else {
 		ppl.HIncrBy(s.coin+":stats", "invalidShares", 1)
 	}
@@ -82,7 +76,16 @@ func (s *Storage) PutPendingBlockHash(blockHash string) {
 	s.Client.SAdd(s.coin+":stats:blockPending", blockHash)
 }
 
+// TODO
 func (s *Storage) GetShares() []*types.Share {
 	//s.Client.Z
 	return nil
 }
+
+func (s *Storage) GetStats() {
+
+}
+
+//             ["scard", ":blocksPending"],
+//            ["scard", ":blocksConfirmed"],
+//            ["scard", ":blocksKicked"]
