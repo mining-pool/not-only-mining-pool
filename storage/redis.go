@@ -1,32 +1,40 @@
-package storageManager
+package storage
 
 import (
 	"github.com/go-redis/redis/v7"
+	logging "github.com/ipfs/go-log"
 	"github.com/mining-pool/go-pool-server/config"
 	"github.com/mining-pool/go-pool-server/types"
-	"log"
 	"strconv"
 	"strings"
 	"time"
 )
 
-type Storage struct {
+var log = logging.Logger("storage")
+
+type DB struct {
 	*redis.Client
 	coin string
 }
 
-func NewStorage(coinName string, options *config.RedisOptions) *Storage {
+func NewStorage(coinName string, options *config.RedisOptions) *DB {
 	client := redis.NewClient(options.ToRedisOptions())
 	if client == nil {
 		log.Panic("failed to connect to the redis server. If you dont wanna db storage please delete redis config in config file")
 	}
-	return &Storage{
+
+	result, err := client.Ping().Result()
+	if err != nil || strings.ToLower(result) != "pong" {
+		log.Panicf("failed to connect to the redis server: %s %s", result, err)
+	}
+
+	return &DB{
 		Client: client,
 		coin:   coinName,
 	}
 }
 
-func (s *Storage) PutShare(share *types.Share) {
+func (s *DB) PutShare(share *types.Share) {
 	now := time.Now().Unix()
 	strNow := strconv.FormatInt(now, 10)
 
@@ -68,21 +76,21 @@ func (s *Storage) PutShare(share *types.Share) {
 
 	_, err := ppl.Exec()
 	if err != nil {
-		log.Println(err)
+		log.Error(err)
 	}
 }
 
-func (s *Storage) PutPendingBlockHash(blockHash string) {
+func (s *DB) PutPendingBlockHash(blockHash string) {
 	s.Client.SAdd(s.coin+":stats:blockPending", blockHash)
 }
 
 // TODO
-func (s *Storage) GetShares() []*types.Share {
+func (s *DB) GetShares() []*types.Share {
 	//s.Client.Z
 	return nil
 }
 
-func (s *Storage) GetStats() {
+func (s *DB) GetStats() {
 
 }
 

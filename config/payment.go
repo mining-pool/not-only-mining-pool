@@ -2,7 +2,6 @@ package config
 
 import (
 	"github.com/mining-pool/go-pool-server/utils"
-	"log"
 	"strings"
 )
 
@@ -28,9 +27,9 @@ func (r *Recipient) GetScript() []byte {
 		case "script":
 			r.script = utils.ScriptPubKeyToScript(r.Address)
 		case "":
-			log.Println(r.Address + " has no type!")
+			log.Error(r.Address, " has no type!")
 		default:
-			log.Println(r.Address + " uses an unsupported type: " + r.Type)
+			log.Error(r.Address, " uses an unsupported type: ", r.Type)
 
 		}
 	}

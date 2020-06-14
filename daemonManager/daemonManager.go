@@ -4,13 +4,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	logging "github.com/ipfs/go-log"
 	"github.com/mining-pool/go-pool-server/config"
 	"github.com/mining-pool/go-pool-server/utils"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"strconv"
 )
+
+var log = logging.Logger("daemonMgr")
 
 type DaemonManager struct {
 	Daemons []*config.DaemonOptions
@@ -44,12 +46,12 @@ func (dm *DaemonManager) IsAllOnline() bool {
 		var jsonRes JsonRpcResponse
 		err := json.NewDecoder(res.Body).Decode(&jsonRes)
 		if err != nil {
-			log.Println(err)
+			log.Error(err)
 			return false
 		}
 
 		if jsonRes.Error != nil {
-			log.Println(jsonRes.Error)
+			log.Error(jsonRes.Error)
 			return false
 		}
 
@@ -124,7 +126,7 @@ func (dm *DaemonManager) CmdAll(method string, params []interface{}) ([]*http.Re
 		var result JsonRpcResponse
 		raw, err := ioutil.ReadAll(res.Body)
 		if err != nil {
-			log.Println(err)
+			log.Error(err)
 		}
 		res.Body = ioutil.NopCloser(bytes.NewBuffer(raw))
 
@@ -173,12 +175,12 @@ func (dm *DaemonManager) Cmd(method string, params []interface{}) (*config.Daemo
 			"params": params,
 		})
 		if err != nil {
-			log.Println(err)
+			log.Error(err)
 		}
 
 		res, err := dm.DoHttpRequest(dm.Daemons[i], reqRawData)
 		if err != nil {
-			log.Println(err)
+			log.Error(err)
 		}
 		//if err := dm.CheckStatusCode(res.StatusCode); err != nil {
 		//	log.Println(err)
@@ -187,13 +189,13 @@ func (dm *DaemonManager) Cmd(method string, params []interface{}) (*config.Daemo
 		var result JsonRpcResponse
 		raw, err := ioutil.ReadAll(res.Body)
 		if err != nil {
-			log.Println(err)
+			log.Error(err)
 		}
 		res.Body = ioutil.NopCloser(bytes.NewBuffer(raw))
 
 		err = json.Unmarshal(raw, &result)
 		if err != nil {
-			log.Println(err)
+			log.Error(err)
 		}
 		return dm.Daemons[i], &result, res
 	}

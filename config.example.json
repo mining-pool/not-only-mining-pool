@@ -19,12 +19,9 @@
       "percent": 0.01
     }
   ],
-
   "blockRefreshInterval": 10,
   "jobRebroadcastTimeout": 55,
-
   "connectionTimeout": 600,
-
   "emitInvalidBlockHashes": false,
   "tcpProxyProtocol": false,
   "banning": {
@@ -33,7 +30,6 @@
     "checkThreshold": 500,
     "purgeInterval": 300
   },
-
   "ports": {
     "3032": {
       "diff": 15,
@@ -47,31 +43,28 @@
       "tls": null
     }
   },
-
-  "daemons": [{
-    "host": "127.0.0.1",
-    "port": 19332,
-    "user": "litecoinrpc",
-    "password": "testnet"
-  }],
-
+  "daemons": [
+    {
+      "host": "127.0.0.1",
+      "port": 19332,
+      "user": "litecoinrpc",
+      "password": "testnet"
+    }
+  ],
   "p2p": {
     "host": "127.0.0.1",
     "port": 19335,
     "magic": "fdd2c8f1",
     "disableTransactions": true
   },
-
   "api": {
     "host": "0.0.0.0",
     "port": 20000
   },
-
   "storage": {
     "network": "tcp",
     "host": "127.0.0.1",
     "port": 6379,
-
     "tls": {
       "certFile": "cert.pem",
       "keyFile": "server.key"

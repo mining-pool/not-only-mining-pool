@@ -9,8 +9,8 @@ type JsonRpc interface {
 
 type JsonRpcResponse struct {
 	Id     interface{}     `json:"id"` // be int64 or null
-	Result json.RawMessage `json:"result"`
-	Error  *JsonRpcError   `json:"error"`
+	Result json.RawMessage `json:"result,omitempty"`
+	Error  *JsonRpcError   `json:"error,omitempty"`
 }
 
 func (j *JsonRpcResponse) GetJsonRpcId() int64 {

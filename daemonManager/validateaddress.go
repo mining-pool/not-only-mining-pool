@@ -3,7 +3,6 @@ package daemonManager
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 )
 
 type ValidateAddress struct {

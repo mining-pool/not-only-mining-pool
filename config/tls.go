@@ -2,7 +2,6 @@ package config
 
 import (
 	"crypto/tls"
-	"log"
 )
 
 type TLSClientOptions struct {
@@ -15,7 +14,7 @@ func (to *TLSClientOptions) ToTLSConfig() *tls.Config {
 	if len(to.CertFile) > 0 && len(to.KeyFile) > 0 {
 		cert, err := tls.LoadX509KeyPair(to.CertFile, to.KeyFile)
 		if err != nil {
-			log.Fatal(err)
+			log.Panic(err)
 		}
 		certs = append(certs, cert)
 	}

@@ -4,21 +4,24 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	logging "github.com/ipfs/go-log"
+	"reflect"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/mining-pool/go-pool-server/api"
 	"github.com/mining-pool/go-pool-server/banningManager"
 	"github.com/mining-pool/go-pool-server/config"
 	"github.com/mining-pool/go-pool-server/daemonManager"
 	"github.com/mining-pool/go-pool-server/jobManager"
 	"github.com/mining-pool/go-pool-server/p2pManager"
-	"github.com/mining-pool/go-pool-server/storageManager"
+	"github.com/mining-pool/go-pool-server/storage"
 	"github.com/mining-pool/go-pool-server/stratum"
 	"github.com/mining-pool/go-pool-server/utils"
-	"log"
-	"reflect"
-	"strconv"
-	"strings"
-	"time"
 )
+
+var log = logging.Logger("poolMgr")
 
 type Pool struct {
 	DaemonManager *daemonManager.DaemonManager
@@ -68,11 +71,11 @@ func NewPool(options *config.Options) *Pool {
 		log.Fatal("ErrorCode detecting number of satoshis in a coin, cannot do payment processing. Tried parsing: ", string(utils.Jsonify(getBalance)))
 	}
 
-	storage := storageManager.NewStorage(options.Coin.Name, options.Storage)
+	storage := storage.NewStorage(options.Coin.Name, options.Storage)
 
 	jm := jobManager.NewJobManager(options, dm, storage)
 	bm := banningManager.NewBanningManager(options.Banning)
-	s := api.NewAPIServer(options)
+	s := api.NewAPIServer(options, storage)
 
 	return &Pool{
 		Options:       options,
@@ -123,14 +126,14 @@ func (p *Pool) SetupP2PBlockNotify() {
 		for {
 			blockHash, ok := <-p.P2PManager.BlockNotifyCh
 			if !ok {
-				log.Println("Block notify is stopped!")
+				log.Warn("Block notify is stopped!")
 				return
 			}
 
 			if p.JobManager.CurrentJob != nil && blockHash != p.JobManager.CurrentJob.GetBlockTemplate.PreviousBlockHash {
 				gbt, err := p.DaemonManager.GetBlockTemplate()
 				if err != nil {
-					log.Println("p2p block notify failed getting block template: ", err)
+					log.Error("p2p block notify failed getting block template: ", err)
 				}
 				p.JobManager.ProcessTemplate(gbt)
 			}
@@ -158,7 +161,7 @@ func (p *Pool) DetectCoinData() {
 	// getdifficulty
 	_, rpcResponse, _ := p.DaemonManager.Cmd("getdifficulty", []interface{}{})
 	if rpcResponse.Error != nil || rpcResponse == nil {
-		log.Println("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
+		log.Error("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
 		return
 	}
 	getDifficulty := daemonManager.BytesToGetDifficulty(rpcResponse.Result)
@@ -176,13 +179,13 @@ func (p *Pool) DetectCoinData() {
 			}
 		}
 	default:
-		log.Println(reflect.ValueOf(getDifficulty).Kind())
+		log.Error(reflect.ValueOf(getDifficulty).Kind())
 	}
 
 	// getmininginfo
 	_, rpcResponse, _ = p.DaemonManager.Cmd("getmininginfo", []interface{}{})
 	if rpcResponse.Error != nil || rpcResponse == nil {
-		log.Println("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
+		log.Error("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
 		return
 	}
 	getMiningInfo := daemonManager.BytesToGetMiningInfo(rpcResponse.Result)
@@ -190,7 +193,7 @@ func (p *Pool) DetectCoinData() {
 
 	_, rpcResponse, _ = p.DaemonManager.Cmd("submitblock", []interface{}{})
 	if rpcResponse == nil || rpcResponse.Error == nil {
-		log.Println("Could not start pool, error with init batch RPC call: " + utils.JsonifyIndentString(rpcResponse))
+		log.Error("Could not start pool, error with init batch RPC call: " + utils.JsonifyIndentString(rpcResponse))
 		return
 	}
 
@@ -204,7 +207,7 @@ func (p *Pool) DetectCoinData() {
 
 	_, rpcResponse, _ = p.DaemonManager.Cmd("getwalletinfo", []interface{}{})
 	if rpcResponse.Error != nil || rpcResponse == nil {
-		log.Println("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
+		log.Error("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
 		return
 	}
 
@@ -220,14 +223,14 @@ func (p *Pool) DetectCoinData() {
 	} else {
 		_, rpcResponse, _ := p.DaemonManager.Cmd("getnetworkinfo", []interface{}{})
 		if rpcResponse.Error != nil || rpcResponse == nil {
-			log.Println("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
+			log.Error("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
 			return
 		}
 		getNetworkInfo := daemonManager.BytesToGetNetworkInfo(rpcResponse.Result)
 
 		_, rpcResponse, _ = p.DaemonManager.Cmd("getblockchaininfo", []interface{}{})
 		if rpcResponse.Error != nil || rpcResponse == nil {
-			log.Println("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
+			log.Error("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
 			return
 		}
 		getBlockchainInfo := daemonManager.BytesToGetBlockchainInfo(rpcResponse.Result)
@@ -286,7 +289,7 @@ func (p *Pool) CheckAllSynced() bool {
 
 func (p *Pool) SetupBlockPolling() {
 	if p.Options.BlockRefreshInterval <= 0 {
-		log.Println("Block template polling has been disabled")
+		log.Warn("Block template polling has been disabled")
 		return
 	}
 
@@ -297,14 +300,14 @@ func (p *Pool) SetupBlockPolling() {
 		for {
 			_, ok := <-p.BlockPollingIntervalTicker.C
 			if !ok {
-				log.Println("Block polling is stopped!")
+				log.Warn("Block polling is stopped!")
 				p.BlockPollingIntervalTicker.Stop()
 				return
 			}
 
 			gbt, err := p.DaemonManager.GetBlockTemplate()
 			if err != nil {
-				log.Println("Block notify error getting block template for "+p.Options.Coin.Name, err)
+				log.Error("Block notify error getting block template for ", p.Options.Coin.Name, err)
 			}
 
 			if gbt != nil {

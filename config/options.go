@@ -1,5 +1,9 @@
 package config
 
+import logging "github.com/ipfs/go-log"
+
+var log = logging.Logger("config")
+
 type Options struct {
 	Coin *CoinOptions `json:"coin"`
 

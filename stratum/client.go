@@ -6,28 +6,31 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
-	"github.com/mining-pool/go-pool-server/banningManager"
-	"github.com/mining-pool/go-pool-server/config"
-	"github.com/mining-pool/go-pool-server/daemonManager"
-	"github.com/mining-pool/go-pool-server/jobManager"
 	"github.com/mining-pool/go-pool-server/types"
-	"github.com/mining-pool/go-pool-server/utils"
-	"github.com/mining-pool/go-pool-server/vardiff"
 	"io"
-	"log"
 	"math/big"
 	"net"
 	"strconv"
 	"time"
+
+	"github.com/mining-pool/go-pool-server/banningManager"
+	"github.com/mining-pool/go-pool-server/config"
+	"github.com/mining-pool/go-pool-server/daemonManager"
+	"github.com/mining-pool/go-pool-server/jobManager"
+	"github.com/mining-pool/go-pool-server/utils"
+	"github.com/mining-pool/go-pool-server/vardiff"
 )
 
 type Client struct {
 	SubscriptionId []byte
 	Options        *config.Options
 	RemoteAddress  net.Addr
-	Socket         net.Conn
-	LastActivity   time.Time
-	Shares         *Shares
+
+	Socket      net.Conn
+	SocketBufIO *bufio.ReadWriter
+
+	LastActivity time.Time
+	Shares       *Shares
 
 	IsAuthorized           bool
 	SubscriptionBeforeAuth bool
@@ -60,6 +63,7 @@ func NewStratumClient(subscriptionId []byte, socket net.Conn, options *config.Op
 		Options:           options,
 		RemoteAddress:     socket.RemoteAddr(),
 		Socket:            socket,
+		SocketBufIO:       bufio.NewReadWriter(bufio.NewReader(socket), bufio.NewWriter(socket)),
 		LastActivity:      time.Now(),
 		Shares: &Shares{
 			Valid:   0,
@@ -85,9 +89,9 @@ func (sc *Client) ShouldBan(shareValid bool) bool {
 				sc.Shares.Reset()
 			} else {
 				//sc.TriggerBanEvent <- strconv.FormatUint(sc.Shares.Invalid, 10) + " out of the last " + strconv.FormatUint(sc.Shares.TotalShares(), 10) + " shares were invalid"
-				log.Println(strconv.FormatUint(sc.Shares.Invalid, 10) + " out of the last " + strconv.FormatUint(sc.Shares.TotalShares(), 10) + " shares were invalid")
+				log.Info(strconv.FormatUint(sc.Shares.Invalid, 10) + " out of the last " + strconv.FormatUint(sc.Shares.TotalShares(), 10) + " shares were invalid")
 				sc.BanningManager.AddBannedIP(sc.RemoteAddress.String())
-				log.Println("closed socket", sc.WorkerName, " due to shares bad percent reached the banning invalid percent threshold")
+				log.Warn("closed socket", sc.WorkerName, " due to shares bad percent reached the banning invalid percent threshold")
 				sc.SocketClosedEvent <- struct{}{}
 				_ = sc.Socket.Close()
 				return true
@@ -112,17 +116,18 @@ func (sc *Client) HandleMessage(message *daemonManager.JsonRpcRequest) {
 		sc.LastActivity = time.Now()
 		sc.HandleSubmit(message)
 	case "mining.get_transactions":
-		sc.SendJson(&daemonManager.JsonRpcResponse{
+		sc.SendJsonRPC(&daemonManager.JsonRpcResponse{
 			Id:     0,
 			Result: nil,
 			Error:  nil, // TODO: Support this
 		})
 	default:
-		log.Println("unknownStratumMethod", string(utils.Jsonify(message)))
+		log.Warn("unknown stratum method: ", string(utils.Jsonify(message)))
 	}
 }
 
 func (sc *Client) HandleSubscribe(message *daemonManager.JsonRpcRequest) {
+	log.Info("handling subscribe")
 	if !sc.IsAuthorized {
 		sc.SubscriptionBeforeAuth = true
 	}
@@ -144,7 +149,7 @@ func (sc *Client) HandleSubscribe(message *daemonManager.JsonRpcRequest) {
 	//	return
 	//}
 
-	sc.SendJson(&daemonManager.JsonRpcResponse{
+	sc.SendJsonRPC(&daemonManager.JsonRpcResponse{
 		Id: message.Id,
 		Result: utils.Jsonify([]interface{}{
 			[][]string{
@@ -159,6 +164,8 @@ func (sc *Client) HandleSubscribe(message *daemonManager.JsonRpcRequest) {
 }
 
 func (sc *Client) HandleAuthorize(message *daemonManager.JsonRpcRequest, replyToSocket bool) {
+	log.Info("handling authorize")
+
 	sc.WorkerName = string(message.Params[0])
 	sc.WorkerPass = string(message.Params[1])
 
@@ -167,13 +174,13 @@ func (sc *Client) HandleAuthorize(message *daemonManager.JsonRpcRequest, replyTo
 
 	if replyToSocket {
 		if sc.IsAuthorized {
-			sc.SendJson(&daemonManager.JsonRpcResponse{
+			sc.SendJsonRPC(&daemonManager.JsonRpcResponse{
 				Id:     message.Id,
 				Result: utils.Jsonify(sc.IsAuthorized),
 				Error:  nil,
 			})
 		} else {
-			sc.SendJson(&daemonManager.JsonRpcResponse{
+			sc.SendJsonRPC(&daemonManager.JsonRpcResponse{
 				Id:     message.Id,
 				Result: utils.Jsonify(sc.IsAuthorized),
 				Error: &daemonManager.JsonRpcError{
@@ -185,27 +192,27 @@ func (sc *Client) HandleAuthorize(message *daemonManager.JsonRpcRequest, replyTo
 	}
 
 	if disconnect {
-		log.Println("closed socket", sc.WorkerName, "due to failed to authorize the miner")
+		log.Warn("closed socket", sc.WorkerName, "due to failed to authorize the miner")
 		_ = sc.Socket.Close()
 		sc.SocketClosedEvent <- struct{}{}
 	}
 
 	// the init Diff for miners
-	log.Println("sending init difficulty:", sc.Options.Ports[sc.Socket.LocalAddr().(*net.TCPAddr).Port].Diff)
+	log.Info("sending init difficulty: ", sc.Options.Ports[sc.Socket.LocalAddr().(*net.TCPAddr).Port].Diff)
 	sc.SendDifficulty(big.NewFloat(sc.Options.Ports[sc.Socket.LocalAddr().(*net.TCPAddr).Port].Diff))
 	sc.SendMiningJob(sc.JobManager.CurrentJob.GetJobParams())
 }
 
 // TODO: Can be DIY
 func (sc *Client) AuthorizeFn(ip net.Addr, port int, workerName string, password string) (authorized bool, disconnect bool, err error) {
-	log.Println("Authorize " + workerName + ":" + password + "@" + ip.String())
+	log.Info("Authorize " + workerName + ": " + password + "@" + ip.String())
 	return true, false, nil
 }
 
 func (sc *Client) HandleSubmit(message *daemonManager.JsonRpcRequest) {
 	/* Avoid hash flood */
 	if !sc.IsAuthorized {
-		sc.SendJson(&daemonManager.JsonRpcResponse{
+		sc.SendJsonRPC(&daemonManager.JsonRpcResponse{
 			Id:     message.Id,
 			Result: nil,
 			Error: &daemonManager.JsonRpcError{
@@ -218,7 +225,7 @@ func (sc *Client) HandleSubmit(message *daemonManager.JsonRpcRequest) {
 	}
 
 	if sc.ExtraNonce1 == nil {
-		sc.SendJson(&daemonManager.JsonRpcResponse{
+		sc.SendJsonRPC(&daemonManager.JsonRpcResponse{
 			Id:     message.Id,
 			Result: nil,
 			Error: &daemonManager.JsonRpcError{
@@ -230,7 +237,7 @@ func (sc *Client) HandleSubmit(message *daemonManager.JsonRpcRequest) {
 		return
 	}
 
-	ok, share := sc.JobManager.ProcessSubmit(
+	share := sc.JobManager.ProcessSubmit(
 		utils.RawJsonToString(message.Params[1]),
 		sc.PreviousDifficulty,
 		sc.CurrentDifficulty,
@@ -242,19 +249,23 @@ func (sc *Client) HandleSubmit(message *daemonManager.JsonRpcRequest) {
 		utils.RawJsonToString(message.Params[0]),
 	)
 
-	if ok {
+	if share.ErrorCode == 0 {
 		sc.JobManager.ProcessShare(share)
 	}
 
-	if share.ErrorCode == 23 {
+	if share.ErrorCode == types.ErrLowDiffShare {
 		// warn the miner with current diff
-		log.Println("Error: sending ", string(utils.Jsonify([]json.RawMessage{utils.Jsonify(sc.CurrentDifficulty)})))
+		log.Error("Error on handling submit: sending new diff ", string(utils.Jsonify([]json.RawMessage{utils.Jsonify(sc.CurrentDifficulty)})), " to miner")
 		f, _ := sc.CurrentDifficulty.Float64()
-		sc.SendJson(&daemonManager.JsonRpcRequest{
+		sc.SendJsonRPC(&daemonManager.JsonRpcRequest{
 			Id:     nil,
 			Method: "mining.set_difficulty",
 			Params: []json.RawMessage{utils.Jsonify(f)},
 		})
+	}
+
+	if share.ErrorCode == types.ErrNTimeOutOfRange {
+		sc.SendMiningJob(sc.JobManager.CurrentJob.GetJobParams())
 	}
 
 	// vardiff
@@ -267,42 +278,59 @@ func (sc *Client) HandleSubmit(message *daemonManager.JsonRpcRequest) {
 
 	if sc.PendingDifficulty != nil && sc.PendingDifficulty.Cmp(big.NewFloat(0)) != 0 {
 		diff := sc.PendingDifficulty
-		log.Println("sending new difficulty:", diff)
+		log.Info("sending new difficulty: ", diff)
 		ok := sc.SendDifficulty(diff)
 		sc.PendingDifficulty = nil
 		if ok {
 			//difficultyChanged
 			// -> difficultyUpdate client.workerName, diff
 			displayDiff, _ := diff.Float64()
-			log.Println("Difficulty update to diff:", displayDiff, "&workerName:", sc.WorkerName)
+			log.Info("Difficulty update to diff:", displayDiff, "&workerName:", sc.WorkerName)
 		}
 	}
 
-	if !sc.ShouldBan(true) {
-		var errParams *daemonManager.JsonRpcError
-		if share.ErrorCode != 0 {
-			errParams = &daemonManager.JsonRpcError{
-				Code:    share.ErrorCode,
-				Message: types.CodeToErrMap[share.ErrorCode],
-			}
+	if sc.ShouldBan(share.ErrorCode == 0) {
+		return
+	}
+
+	var errParams *daemonManager.JsonRpcError
+	if share.ErrorCode != 0 {
+		errParams = &daemonManager.JsonRpcError{
+			Code:    int(share.ErrorCode),
+			Message: share.ErrorCode.String(),
 		}
 
-		sc.SendJson(&daemonManager.JsonRpcResponse{
+		log.Error(sc.WorkerName, "'s share is invalid: ", errParams.Message)
+		sc.SendJsonRPC(&daemonManager.JsonRpcResponse{
 			Id:     message.Id,
-			Result: utils.Jsonify(ok),
+			Result: utils.Jsonify(false),
 			Error:  errParams,
 		})
 	}
+
+	log.Info(sc.WorkerName, " submitted a valid share")
+	sc.SendJsonRPC(&daemonManager.JsonRpcResponse{
+		Id:     message.Id,
+		Result: utils.Jsonify(true),
+	})
 }
 
-func (sc *Client) SendJson(jsonRpcs ...daemonManager.JsonRpc) {
-	response := make([]byte, 0)
-	for i := range jsonRpcs {
-		response = append(response, jsonRpcs[i].Json()...)
-		response = append(response, '\n')
+func (sc *Client) SendJsonRPC(jsonRPCs daemonManager.JsonRpc) {
+	raw := jsonRPCs.Json()
+
+	message := make([]byte, 0, len(raw)+1)
+	message = append(raw, '\n')
+	_, err := sc.SocketBufIO.Write(message)
+	if err != nil {
+		log.Error("failed inputting", string(raw), err)
 	}
 
-	_, _ = sc.Socket.Write(response)
+	err = sc.SocketBufIO.Flush()
+	if err != nil {
+		log.Error("failed sending data", err)
+	}
+
+	log.Debug("sent raw bytes: ", string(raw))
 }
 
 func (sc *Client) SendSubscriptionFirstResponse() {
@@ -314,13 +342,12 @@ func (sc *Client) SetupSocket() {
 	once := true
 
 	go func() {
-		r := bufio.NewReader(sc.Socket)
 		for {
 			select {
 			case <-sc.SocketClosedEvent:
 				return
 			default:
-				raw, err := r.ReadBytes('\n')
+				raw, err := sc.SocketBufIO.ReadBytes('\n')
 				if err != nil {
 					if err == io.EOF {
 						sc.SocketClosedEvent <- struct{}{}
@@ -329,27 +356,27 @@ func (sc *Client) SetupSocket() {
 					e, ok := err.(net.Error)
 
 					if !ok {
-						log.Println("failed to ready bytes from socket due to non-network error:", err)
+						log.Error("failed to ready bytes from socket due to non-network error:", err)
 						return
 					}
 
 					if ok && e.Timeout() {
-						log.Println("socket is timeout:", err)
+						log.Error("socket is timeout:", err)
 						return
 					}
 
 					if ok && e.Temporary() {
-						log.Println("failed to ready bytes from socket due to temporary error:", err)
+						log.Error("failed to ready bytes from socket due to temporary error:", err)
 						continue
 					}
 
-					log.Println("failed to ready bytes from socket:", err)
+					log.Error("failed to ready bytes from socket:", err)
 					return
 				}
 
 				if len(raw) > 10240 {
 					//socketFlooded
-					log.Println("Flooding message from", sc.GetLabel(), ":", string(raw))
+					log.Warn("Flooding message from", sc.GetLabel(), ":", string(raw))
 					_ = sc.Socket.Close()
 					sc.SocketClosedEvent <- struct{}{}
 					return
@@ -363,7 +390,7 @@ func (sc *Client) SetupSocket() {
 				err = json.Unmarshal(raw, &message)
 				if err != nil {
 					if !sc.Options.TCPProxyProtocol {
-						log.Println("Malformed message from", sc.GetLabel(), ":", string(raw))
+						log.Error("Malformed message from", sc.GetLabel(), ":", string(raw))
 						_ = sc.Socket.Close()
 						sc.SocketClosedEvent <- struct{}{}
 					}
@@ -376,16 +403,17 @@ func (sc *Client) SetupSocket() {
 					if bytes.HasPrefix(raw, []byte("PROXY")) {
 						sc.RemoteAddress, err = net.ResolveTCPAddr("tcp", string(bytes.Split(raw, []byte(" "))[2]))
 						if err != nil {
-							log.Println("failed to resolve tcp addr behind proxy:", err)
+							log.Error("failed to resolve tcp addr behind proxy:", err)
 						}
 					} else {
-						log.Println("Client IP detection failed, tcpProxyProtocol is enabled yet did not receive proxy protocol message, instead got data:", raw)
+						log.Error("Client IP detection failed, tcpProxyProtocol is enabled yet did not receive proxy protocol message, instead got data:", raw)
 					}
 				}
 
 				sc.BanningManager.CheckBan(sc.RemoteAddress.String())
 
 				if &message != nil {
+					log.Debug("handling message: ", string(message.Json()))
 					sc.HandleMessage(&message)
 				}
 			}
@@ -402,7 +430,7 @@ func (sc *Client) GetLabel() string {
 }
 
 func (sc *Client) EnqueueNextDifficulty(nextDiff float64) bool {
-	log.Println("EnqueueNextDifficulty:", nextDiff)
+	log.Info("Enqueue next difficulty:", nextDiff)
 	sc.PendingDifficulty = big.NewFloat(nextDiff)
 	return true
 }
@@ -419,7 +447,7 @@ func (sc *Client) SendDifficulty(diff *big.Float) bool {
 	sc.CurrentDifficulty = diff
 
 	f, _ := diff.Float64()
-	sc.SendJson(&daemonManager.JsonRpcRequest{
+	sc.SendJsonRPC(&daemonManager.JsonRpcRequest{
 		Id:     0,
 		Method: "mining.set_difficulty",
 		Params: []json.RawMessage{utils.Jsonify(f)},
@@ -429,10 +457,11 @@ func (sc *Client) SendDifficulty(diff *big.Float) bool {
 }
 
 func (sc *Client) SendMiningJob(jobParams []interface{}) {
-	log.Println("sending job:", string(utils.Jsonify(jobParams)))
+	log.Info("sending job: ", string(utils.Jsonify(jobParams)))
+
 	lastActivityAgo := time.Since(sc.LastActivity)
 	if lastActivityAgo > time.Duration(sc.Options.ConnectionTimeout)*time.Second {
-		log.Println("closed socket", sc.WorkerName, "due to activity timeout")
+		log.Info("closed socket", sc.WorkerName, "due to activity timeout")
 		_ = sc.Socket.Close()
 		sc.SocketClosedEvent <- struct{}{}
 		return
@@ -446,7 +475,7 @@ func (sc *Client) SendMiningJob(jobParams []interface{}) {
 			//difficultyChanged
 			// -> difficultyUpdate client.workerName, diff
 			displayDiff, _ := diff.Float64()
-			log.Println("Difficulty update to diff:", displayDiff, "&workerName:", sc.WorkerName)
+			log.Info("Difficulty update to diff:", displayDiff, "&workerName:", sc.WorkerName)
 		}
 	}
 
@@ -455,7 +484,7 @@ func (sc *Client) SendMiningJob(jobParams []interface{}) {
 		params[i] = utils.Jsonify(jobParams[i])
 	}
 
-	sc.SendJson(&daemonManager.JsonRpcRequest{
+	sc.SendJsonRPC(&daemonManager.JsonRpcRequest{
 		Id:     nil,
 		Method: "mining.notify",
 		Params: params,

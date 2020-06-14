@@ -3,13 +3,15 @@ package transactions
 import (
 	"bytes"
 	"encoding/hex"
+	logging "github.com/ipfs/go-log"
 	"github.com/mining-pool/go-pool-server/config"
 	"github.com/mining-pool/go-pool-server/daemonManager"
 	"github.com/mining-pool/go-pool-server/utils"
-	"log"
 	"math"
 	"time"
 )
+
+var log = logging.Logger("tx")
 
 //type  struct {
 //	CoinbaseValue            uint64 // unit: Satoshis
@@ -24,7 +26,7 @@ func GenerateOutputTransactions(poolRecipient []byte, recipients []*config.Recip
 	txOutputBuffers := make([][]byte, 0)
 
 	if rpcData.Masternode != nil && len(rpcData.Masternode) > 0 {
-		log.Println("handling dash's masternode")
+		log.Info("handling dash's masternode")
 		for i := range rpcData.Masternode {
 			payeeReward := rpcData.Masternode[i].Amount
 			reward -= payeeReward
@@ -44,7 +46,7 @@ func GenerateOutputTransactions(poolRecipient []byte, recipients []*config.Recip
 	}
 
 	if rpcData.Superblock != nil && len(rpcData.Superblock) > 0 {
-		log.Println("handling dash's superblock")
+		log.Info("handling dash's superblock")
 		for i := range rpcData.Superblock {
 			payeeReward := rpcData.Superblock[i].Amount
 			reward -= payeeReward
@@ -106,7 +108,7 @@ func GenerateOutputTransactions(poolRecipient []byte, recipients []*config.Recip
 	if rpcData.DefaultWitnessCommitment != "" {
 		witnessCommitment, err := hex.DecodeString(rpcData.DefaultWitnessCommitment)
 		if err != nil {
-			log.Println(err)
+			log.Error(err)
 		}
 
 		txOutputBuffers = append([][]byte{bytes.Join([][]byte{
@@ -155,7 +157,7 @@ func CreateGeneration(rpcData *daemonManager.GetBlockTemplate, publicKey, extraN
 
 	bCoinbaseAuxFlags, err := hex.DecodeString(rpcData.CoinbaseAux.Flags)
 	if err != nil {
-		log.Println(err)
+		log.Error(err)
 	}
 	scriptSigPart1 := bytes.Join([][]byte{
 		utils.SerializeNumber(uint64(rpcData.Height)),

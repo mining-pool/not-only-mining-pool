@@ -4,20 +4,20 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
+	"math/big"
+
 	"github.com/mining-pool/go-pool-server/algorithm"
 	"github.com/mining-pool/go-pool-server/config"
 	"github.com/mining-pool/go-pool-server/daemonManager"
 	"github.com/mining-pool/go-pool-server/merkletree"
 	"github.com/mining-pool/go-pool-server/transactions"
 	"github.com/mining-pool/go-pool-server/utils"
-	"log"
-	"math/big"
 )
 
 type Job struct {
 	GetBlockTemplate      *daemonManager.GetBlockTemplate
 	Submits               []string
-	JobParams             []interface{}
+	jobParams             []interface{}
 	GenerationTransaction [][]byte
 	JobId                 string
 	PrevHashReversed      string
@@ -45,7 +45,7 @@ func NewJob(jobId string, rpcData *daemonManager.GetBlockTemplate, poolAddressSc
 
 	bPreviousBlockHash, err := hex.DecodeString(rpcData.PreviousBlockHash)
 	if err != nil {
-		log.Println(err)
+		log.Error(err)
 	}
 	prevHashReversed := hex.EncodeToString(utils.ReverseByteOrder(bPreviousBlockHash))
 
@@ -53,7 +53,7 @@ func NewJob(jobId string, rpcData *daemonManager.GetBlockTemplate, poolAddressSc
 	for i := 0; i < len(rpcData.Transactions); i++ {
 		transactionData[i], err = hex.DecodeString(rpcData.Transactions[i].Data)
 		if err != nil {
-			log.Println(err)
+			log.Error(err)
 		}
 	}
 
@@ -72,18 +72,18 @@ func NewJob(jobId string, rpcData *daemonManager.GetBlockTemplate, poolAddressSc
 	for i := 0; i < len(rpcData.Transactions); i++ {
 		data, err := hex.DecodeString(rpcData.Transactions[i].Data)
 		if err != nil {
-			log.Fatal("failed to decode tx:", rpcData.Transactions[i])
+			log.Panic("failed to decode tx: ", rpcData.Transactions[i])
 		}
 
 		txData = append(txData, data)
 	}
 
-	log.Println("New Job, diff:", bigDiff)
+	log.Info("New Job, diff: ", bigDiff)
 
 	return &Job{
 		GetBlockTemplate:      rpcData,
 		Submits:               nil,
-		JobParams:             nil,
+		jobParams:             nil,
 		GenerationTransaction: generationTransaction,
 		JobId:                 jobId,
 		PrevHashReversed:      prevHashReversed,
@@ -98,7 +98,7 @@ func NewJob(jobId string, rpcData *daemonManager.GetBlockTemplate, poolAddressSc
 
 func (j *Job) SerializeCoinbase(extraNonce1, extraNonce2 []byte) []byte {
 	if j.GenerationTransaction[0] == nil || j.GenerationTransaction[1] == nil {
-		log.Println("warning: empty generation transaction", j.GenerationTransaction)
+		log.Warn("empty generation transaction", j.GenerationTransaction)
 	}
 
 	return bytes.Join([][]byte{
@@ -119,12 +119,12 @@ func (j *Job) SerializeBlock(header, coinbase []byte) []byte {
 	}
 
 	if j.TransactionData == nil {
-		log.Println("warning: TransactionData is empty")
+		log.Warn("transaction data is empty")
 	}
 
 	voteData := j.GetVoteData()
 	if voteData == nil {
-		log.Println("no vote data")
+		log.Warn("no vote data")
 	}
 
 	return bytes.Join([][]byte{
@@ -170,8 +170,8 @@ func (j *Job) RegisterSubmit(extraNonce1, extraNonce2, nTime, nonce string) bool
 }
 
 func (j *Job) GetJobParams() []interface{} {
-	if j.JobParams == nil {
-		j.JobParams = []interface{}{
+	if j.jobParams == nil {
+		j.jobParams = []interface{}{
 			j.JobId,
 			j.PrevHashReversed,
 			hex.EncodeToString(j.GenerationTransaction[0]),
@@ -184,7 +184,7 @@ func (j *Job) GetJobParams() []interface{} {
 		}
 	}
 
-	return j.JobParams
+	return j.jobParams
 }
 
 func GetTransactionBytes(txs []*daemonManager.TxParams) [][]byte {

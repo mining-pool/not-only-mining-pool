@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/maoxs2/go-bech32"
-	"log"
 	"reflect"
 	"testing"
 )

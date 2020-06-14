@@ -5,13 +5,15 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
+	logging "github.com/ipfs/go-log"
 	"github.com/mining-pool/go-pool-server/config"
 	"github.com/mining-pool/go-pool-server/utils"
 	"io"
-	"log"
 	"net"
 	"time"
 )
+
+var log = logging.Logger("p2pMgr")
 
 type Peer struct {
 	Magic []byte
@@ -112,7 +114,7 @@ func (p *Peer) SetupMessageParser() {
 			}
 
 			if err != nil || n < 24 {
-				log.Println(err)
+				log.Error(err)
 				continue
 			}
 
@@ -123,7 +125,7 @@ func (p *Peer) SetupMessageParser() {
 			payload := make([]byte, binary.LittleEndian.Uint32(header[16:20]))
 			_, err = p.Conn.Read(payload)
 			if err != nil {
-				log.Println(err)
+				log.Error(err)
 				continue
 			}
 
@@ -136,7 +138,7 @@ func (p *Peer) SetupMessageParser() {
 }
 
 func (p *Peer) HandleMessage(command, payload []byte) {
-	log.Println("handling: ", command, payload)
+	log.Info("handling: ", command, payload)
 	switch string(command) {
 	case string(p.Commands["inv"]):
 		p.HandleInv(payload)
@@ -172,7 +174,7 @@ func (p *Peer) HandleInv(payload []byte) {
 			//tx := hex.EncodeToString(buf[4:36])
 		case p.InvCodes["block"]:
 			block := hex.EncodeToString(buf[4:36])
-			log.Println("block found: ", block)
+			log.Warn("block found: ", block)
 			// block found
 			p.ProcessBlockNotify(block)
 		}
@@ -181,7 +183,7 @@ func (p *Peer) HandleInv(payload []byte) {
 }
 
 func (p *Peer) SendMessage(command, payload []byte) {
-	log.Println("sending: ", command, payload)
+	log.Info("sending: ", command, payload)
 	if p.Conn == nil {
 		p.Connect()
 	}
@@ -196,10 +198,10 @@ func (p *Peer) SendMessage(command, payload []byte) {
 
 	_, err := p.Conn.Write(message)
 	if err != nil {
-		log.Println(err)
+		log.Error(err)
 	}
 
-	log.Println(string(message))
+	log.Info(string(message))
 }
 
 func (p *Peer) SendVersion() {
@@ -223,7 +225,7 @@ func (p *Peer) SendVersion() {
 }
 
 func (p *Peer) ProcessBlockNotify(blockHash string) {
-	log.Println("Block notification via p2p")
+	log.Info("Block notification via p2p")
 	//if p.JobManager.CurrentJob != nil && blockHash != p.JobManager.CurrentJob.GetBlockTemplate.PreviousBlockHash {
 	p.BlockNotifyCh <- blockHash
 	//}

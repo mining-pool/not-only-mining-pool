@@ -3,16 +3,19 @@ package stratum
 import (
 	"crypto/tls"
 	"encoding/binary"
+	logging "github.com/ipfs/go-log"
+	"net"
+	"strconv"
+	"time"
+
 	"github.com/mining-pool/go-pool-server/banningManager"
 	"github.com/mining-pool/go-pool-server/config"
 	"github.com/mining-pool/go-pool-server/daemonManager"
 	"github.com/mining-pool/go-pool-server/jobManager"
 	"github.com/mining-pool/go-pool-server/vardiff"
-	"log"
-	"net"
-	"strconv"
-	"time"
 )
+
+var log = logging.Logger("stratum")
 
 type Server struct {
 	Options  *config.Options
@@ -54,7 +57,7 @@ func (ss *Server) Init() (portStarted []int) {
 		}
 
 		if err != nil {
-			log.Println(err)
+			log.Error(err)
 			continue
 		}
 
@@ -86,11 +89,12 @@ func (ss *Server) Init() (portStarted []int) {
 		for {
 			conn, err := ss.Listener.Accept()
 			if err != nil {
-				log.Println(err)
+				log.Error(err)
 				continue
 			}
 
 			if conn != nil {
+				log.Info("new conn from ", conn.RemoteAddr().String())
 				go ss.HandleNewClient(conn)
 			}
 		}
@@ -99,28 +103,29 @@ func (ss *Server) Init() (portStarted []int) {
 	return portStarted
 }
 
+// HandleNewClient converts the conn to an underlying client instance and finally return its unique subscriptionID
 func (ss *Server) HandleNewClient(socket net.Conn) []byte {
-	subscriptionId := ss.SubscriptionCounter.Next()
-	client := NewStratumClient(subscriptionId, socket, ss.Options, ss.JobManager, ss.BanningManager)
-	ss.StratumClients[binary.LittleEndian.Uint64(subscriptionId)] = client
+	subscriptionID := ss.SubscriptionCounter.Next()
+	client := NewStratumClient(subscriptionID, socket, ss.Options, ss.JobManager, ss.BanningManager)
+	ss.StratumClients[binary.LittleEndian.Uint64(subscriptionID)] = client
 	// client.connected
 
 	go func() {
 		for {
 			<-client.SocketClosedEvent
-			log.Println("socket closed")
-			ss.RemoveStratumClientBySubscriptionId(subscriptionId)
+			log.Warn("a client socket closed")
+			ss.RemoveStratumClientBySubscriptionId(subscriptionID)
 			// client.disconnected
 		}
 	}()
 
 	client.Init()
 
-	return subscriptionId
+	return subscriptionID
 }
 
 func (ss *Server) BroadcastMiningJobs(jobParams []interface{}) {
-	log.Println("broadcasting job params")
+	log.Info("broadcasting job params")
 	for clientId := range ss.StratumClients {
 		ss.StratumClients[clientId].SendMiningJob(jobParams)
 	}

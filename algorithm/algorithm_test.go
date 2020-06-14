@@ -3,12 +3,11 @@ package algorithm
 import (
 	"encoding/hex"
 	"github.com/mining-pool/go-pool-server/utils"
-	"log"
 	"testing"
 )
 
 func TestHash(t *testing.T) {
-	log.Println(MaxTargetTruncated)
+	t.Log(MaxTargetTruncated)
 }
 
 func TestScryptHash(t *testing.T) {
@@ -17,7 +16,7 @@ func TestScryptHash(t *testing.T) {
 	if err != nil {
 		t.Log(err)
 	}
-	result := hex.EncodeToString(utils.ReverseBytes(ScryptHash(headerBytes)))
+	result := hex.EncodeToString(utils.ReverseBytes(GetHashFunc("scrypt")(headerBytes)))
 	if result != "0000000110c8357966576df46f3b802ca897deb7ad18b12f1c24ecff6386ebd9" {
 		t.Log(result)
 		t.Fail()
@@ -26,7 +25,7 @@ func TestScryptHash(t *testing.T) {
 
 func TestX11Hash(t *testing.T) {
 	if hex.EncodeToString(X11Hash([]byte("The great experiment continues."))) != "4da3b7c5ff698c6546564ebc72204f31885cd87b75b2b3ca5a93b5d75db85b8c" {
-		t.Log(hex.EncodeToString(X11Hash([]byte("The great experiment continues."))))
+		t.Log(hex.EncodeToString(GetHashFunc("x11")([]byte("The great experiment continues."))))
 		t.Fail()
 	}
 
@@ -38,4 +37,8 @@ func TestX11Hash(t *testing.T) {
 		t.Log(hash)
 		t.Fail()
 	}
+}
+
+func TestUnsupportedHash(t *testing.T) {
+	GetHashFunc("unknown")
 }

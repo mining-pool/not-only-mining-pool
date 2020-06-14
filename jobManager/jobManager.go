@@ -2,19 +2,22 @@ package jobManager
 
 import (
 	"encoding/hex"
-	"github.com/mining-pool/go-pool-server/algorithm"
-	"github.com/mining-pool/go-pool-server/config"
-	"github.com/mining-pool/go-pool-server/daemonManager"
-	"github.com/mining-pool/go-pool-server/storageManager"
-	"github.com/mining-pool/go-pool-server/types"
-	"github.com/mining-pool/go-pool-server/utils"
-	"log"
+	logging "github.com/ipfs/go-log"
 	"math/big"
 	"net"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mining-pool/go-pool-server/algorithm"
+	"github.com/mining-pool/go-pool-server/config"
+	"github.com/mining-pool/go-pool-server/daemonManager"
+	"github.com/mining-pool/go-pool-server/storage"
+	"github.com/mining-pool/go-pool-server/types"
+	"github.com/mining-pool/go-pool-server/utils"
 )
+
+var log = logging.Logger("jobMgr")
 
 type JobCounter struct {
 	Counter *big.Int
@@ -23,7 +26,7 @@ type JobCounter struct {
 type JobManager struct {
 	PoolAddress *config.Recipient
 
-	Storage               *storageManager.Storage
+	Storage               *storage.DB
 	Options               *config.Options
 	JobCounter            *JobCounter
 	ExtraNonce1Generator  *ExtraNonce1Generator
@@ -40,7 +43,7 @@ type JobManager struct {
 	NewBlockEvent chan *Job
 }
 
-func NewJobManager(options *config.Options, dm *daemonManager.DaemonManager, storage *storageManager.Storage) *JobManager {
+func NewJobManager(options *config.Options, dm *daemonManager.DaemonManager, storage *storage.DB) *JobManager {
 	placeholder, _ := hex.DecodeString("f000000ff111111f")
 	extraNonce1Generator := NewExtraNonce1Generator()
 
@@ -66,19 +69,19 @@ func (jm *JobManager) Init(gbt *daemonManager.GetBlockTemplate) {
 func (jm *JobManager) ProcessShare(share *types.Share) {
 	//isValidBlock
 	if share.BlockHex != "" {
-		log.Printf("submitting new Block: %s", share.BlockHex)
+		log.Info("submitting new Block: ", share.BlockHex)
 		jm.DaemonManager.SubmitBlock(share.BlockHex)
 
 		isAccepted, tx := jm.CheckBlockAccepted(share.BlockHex)
 		share.TxHash = tx
 		if isAccepted {
 			go jm.Storage.PutShare(share)
-			log.Printf("Block %s Accepted! tx: %s. Wait for pendding!", share.BlockHex, share.TxHash)
+			log.Info("Block ", share.BlockHex, " Accepted! generation tx: ", share.TxHash, ". Wait for pendding!")
 		}
 
 		gbt, err := jm.DaemonManager.GetBlockTemplate()
 		if err != nil {
-			panic(err)
+			log.Panic("failed fetching GBT: ", err)
 		}
 		jm.ProcessTemplate(gbt)
 		return
@@ -129,7 +132,7 @@ func (jm *JobManager) UpdateCurrentJob(rpcData *daemonManager.GetBlockTemplate) 
 	jm.CurrentJob = tmpBlockTemplate
 	jm.ValidJobs[tmpBlockTemplate.JobId] = tmpBlockTemplate
 
-	log.Println("Job updated")
+	log.Debug("Job updated")
 }
 
 // CreateNewJob creates a new job when mining new height
@@ -149,7 +152,7 @@ func (jm *JobManager) CreateNewJob(rpcData *daemonManager.GetBlockTemplate) {
 	jm.CurrentJob = tmpBlockTemplate
 	jm.ValidJobs[tmpBlockTemplate.JobId] = tmpBlockTemplate
 
-	log.Println("New Job (Block) from blocktemplate")
+	log.Info("New Job (Block) from block template")
 }
 
 // ProcessTemplate handles the template
@@ -166,7 +169,7 @@ func (jm *JobManager) ProcessTemplate(rpcData *daemonManager.GetBlockTemplate) {
 	jm.CreateNewJob(rpcData)
 }
 
-func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, extraNonce1 []byte, hexExtraNonce2, hexNTime, hexNonce string, ipAddr net.Addr, workerName string) (ok bool, share *types.Share) {
+func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, extraNonce1 []byte, hexExtraNonce2, hexNTime, hexNonce string, ipAddr net.Addr, workerName string) (share *types.Share) {
 	submitTime := time.Now()
 
 	var miner, rig string
@@ -181,80 +184,79 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 
 	job, exists := jm.ValidJobs[jobId]
 	if !exists || job == nil || job.JobId != jobId {
-		share = &types.Share{
+		return &types.Share{
 			JobId:      jobId,
 			RemoteAddr: ipAddr,
 			Miner:      miner,
 			Rig:        rig,
-			ErrorCode:  20,
+
+			ErrorCode: types.ErrJobNotFound,
 		}
-		return false, share
 	}
 
 	extraNonce2, err := hex.DecodeString(hexExtraNonce2)
 	if err != nil {
-		log.Println(err)
+		log.Error(err)
 	}
 
 	if len(extraNonce2) != jm.ExtraNonce2Size {
-		share = &types.Share{
+		return &types.Share{
 			JobId:      jobId,
 			RemoteAddr: ipAddr,
 			Miner:      miner,
 			Rig:        rig,
 
-			ErrorCode: 21,
+			ErrorCode: types.ErrIncorrectExtraNonce2Size,
 		}
-		return false, share
 	}
 
 	if len(hexNTime) != 8 {
-		share = &types.Share{
+		return &types.Share{
 			JobId:      jobId,
 			RemoteAddr: ipAddr,
 			Miner:      miner,
 			Rig:        rig,
 
-			ErrorCode: 22,
+			ErrorCode: types.ErrIncorrectNTimeSize,
 		}
-		return false, share
 	}
 
 	// allowed nTime range [GBT's CurTime, submitTime+7s]
 	nTimeInt, err := strconv.ParseInt(hexNTime, 16, 64)
 	if err != nil {
-		log.Println(err)
+		log.Error(err)
 	}
 	if uint32(nTimeInt) < job.GetBlockTemplate.CurTime || nTimeInt > submitTime.Unix()+7 {
-		return false, &types.Share{
+		log.Error("nTime incorrect: expect from %d to %d, got %d", job.GetBlockTemplate.CurTime, submitTime.Unix()+7, uint32(nTimeInt))
+		return &types.Share{
 			JobId:      jobId,
 			RemoteAddr: ipAddr,
 			Miner:      miner,
 			Rig:        rig,
 
-			ErrorCode: 23,
+			ErrorCode: types.ErrNTimeOutOfRange,
 		}
 	}
 
 	if len(hexNonce) != 8 {
-		return false, &types.Share{
+		return &types.Share{
 			JobId:      jobId,
 			RemoteAddr: ipAddr,
 			Miner:      miner,
 			Rig:        rig,
 
-			ErrorCode: 24,
+			ErrorCode: types.ErrIncorrectNonceSize,
 		}
 	}
 
 	if !job.RegisterSubmit(hex.EncodeToString(extraNonce1), hexExtraNonce2, hexNTime, hexNonce) {
-		return false, &types.Share{
+		return &types.Share{
 			JobId:      jobId,
 			RemoteAddr: ipAddr,
 			Miner:      miner,
 			Rig:        rig,
 
-			ErrorCode: 25,
+			ErrorCode: types.ErrDuplicateShare,
 		}
 	}
 
@@ -264,12 +266,12 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 
 	nonce, err := hex.DecodeString(hexNonce) // in big-endian
 	if err != nil {
-		log.Println(err)
+		log.Error(err)
 	}
 
 	nTimeBytes, err := hex.DecodeString(hexNTime) // in big-endian
 	if err != nil {
-		log.Println(err)
+		log.Error(err)
 	}
 
 	headerBytes := job.SerializeHeader(merkleRoot, nTimeBytes, nonce) // in LE
@@ -294,8 +296,8 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 			blockHash = hex.EncodeToString(utils.ReverseBytes(algorithm.GetHashFunc(jm.Options.Algorithm.Name)(headerBytes)))
 		}
 
-		log.Println("Found Block: " + blockHash)
-		return true, &types.Share{
+		log.Warn("Found Block: ", blockHash)
+		return &types.Share{
 			JobId:      jobId,
 			RemoteAddr: ipAddr,
 			Miner:      miner,
@@ -314,7 +316,7 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 		//Check if share matched a previous difficulty from before a vardiff retarget
 		if prevDiff != nil && bigShareDiff.Cmp(prevDiff) >= 0 {
 
-			return true, &types.Share{
+			return &types.Share{
 				JobId:      jobId,
 				RemoteAddr: ipAddr,
 				Miner:      miner,
@@ -325,16 +327,17 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 				Diff:        shareDiff,
 			}
 		} else {
-			return false, &types.Share{
+			return &types.Share{
 				JobId:      jobId,
 				RemoteAddr: ipAddr,
 				Miner:      workerName,
-				ErrorCode:  26,
+
+				ErrorCode: types.ErrLowDiffShare,
 			}
 		}
 	}
 
-	return true, &types.Share{
+	return &types.Share{
 		JobId:      jobId,
 		RemoteAddr: ipAddr,
 		Miner:      miner,

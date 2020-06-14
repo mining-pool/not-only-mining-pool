@@ -1,13 +1,15 @@
 package algorithm
 
 import (
+	logging "github.com/ipfs/go-log"
 	"github.com/mining-pool/go-pool-server/utils"
 	"github.com/samli88/go-x11-hash"
 	"golang.org/x/crypto/scrypt"
-	"log"
 	"math/big"
 	"strings"
 )
+
+var log = logging.Logger("algorithm")
 
 // difficulty = MAX_TARGET / current_target.
 var (
@@ -24,21 +26,19 @@ func GetHashFunc(hashName string) func([]byte) []byte {
 	case "sha256d":
 		return DoubleSha256Hash
 	default:
-		log.Panic(hashName, "is not officially supported yet, but you can easily add it with cgo binding by yourself")
+		log.Panic(hashName, " is not officially supported yet, but you can easily add it with cgo binding by yourself")
 		return nil
 	}
 }
 
 // ScryptHash is the algorithm which litecoin uses as its PoW mining algorithm
 func ScryptHash(data []byte) []byte {
-	b, err := scrypt.Key(data, data, 1024, 1, 1, 32)
-	if err != nil {
-		log.Panic(err)
-	}
+	b, _ := scrypt.Key(data, data, 1024, 1, 1, 32)
 
 	return b
 }
 
+// X11Hash is the algorithm which dash uses as its PoW mining algorithm
 func X11Hash(data []byte) []byte {
 	dst := make([]byte, 32)
 	x11.New().Hash(data, dst)

@@ -8,20 +8,22 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	logging "github.com/ipfs/go-log"
 	"github.com/maoxs2/go-bech32"
 	"github.com/mr-tron/base58"
-	"log"
 	"math/big"
 	"os"
 	"strconv"
 	"strings"
 )
 
+var log = logging.Logger("utils")
+
 func RandPositiveInt64() int64 {
 	randomNumBytes := make([]byte, 8)
 	_, err := rand.Read(randomNumBytes)
 	if err != nil {
-		log.Println(err)
+		log.Error(err)
 	}
 
 	i := int64(binary.LittleEndian.Uint64(randomNumBytes))
@@ -36,7 +38,7 @@ func RandHexUint64() string {
 	randomNumBytes := make([]byte, 8)
 	_, err := rand.Read(randomNumBytes)
 	if err != nil {
-		log.Println(err)
+		log.Error(err)
 	}
 
 	return hex.EncodeToString(randomNumBytes)
@@ -175,7 +177,7 @@ func Uint256BytesFromHash(h string) []byte {
 	container := make([]byte, 32)
 	fromHex, err := hex.DecodeString(h)
 	if err != nil {
-		log.Println(err)
+		log.Error(err)
 	}
 
 	copy(container, fromHex)
@@ -357,7 +359,7 @@ func HexDecode(b []byte) []byte {
 	dst := make([]byte, hex.DecodedLen(len(b)))
 	_, err := hex.Decode(dst, b)
 	if err != nil {
-		log.Panic("failed to decode hex:", string(b))
+		log.Panic("failed to decode hex: ", string(b))
 	}
 
 	return dst
@@ -373,7 +375,7 @@ func HexEncode(b []byte) []byte {
 func Jsonify(i interface{}) []byte {
 	r, err := json.Marshal(i)
 	if err != nil {
-		log.Println("Jsonify:", err)
+		log.Error("Jsonify: ", err)
 		return nil
 	}
 
@@ -383,7 +385,7 @@ func Jsonify(i interface{}) []byte {
 func JsonifyIndentString(i interface{}) string {
 	r, err := json.MarshalIndent(i, "", "  ")
 	if err != nil {
-		log.Println("JsonifyIndentString:", err)
+		log.Error("JsonifyIndentString: ", err)
 		return ""
 	}
 	return string(r)
@@ -427,7 +429,7 @@ func RawJsonToString(raw json.RawMessage) string {
 	var str string
 	err := json.Unmarshal(raw, &str)
 	if err != nil {
-		log.Println(err)
+		log.Error(err)
 	}
 
 	return str
@@ -435,7 +437,7 @@ func RawJsonToString(raw json.RawMessage) string {
 
 func FixedLenStringBytes(s string, l int) []byte {
 	b := make([]byte, l)
-	copy(b, []byte(s))
+	copy(b, s)
 	return b
 }
 
