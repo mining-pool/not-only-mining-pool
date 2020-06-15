@@ -29,7 +29,7 @@ func (dm *DaemonManager) SubmitBlock(blockHex string) {
 			}
 
 			if err == nil && result == "inconclusive" {
-				log.Error("Daemon instance warns an inconclusive block")
+				log.Warn("Daemon instance warns an inconclusive block")
 			}
 		}
 	}

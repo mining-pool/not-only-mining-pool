@@ -227,7 +227,7 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 		log.Error(err)
 	}
 	if uint32(nTimeInt) < job.GetBlockTemplate.CurTime || nTimeInt > submitTime.Unix()+7 {
-		log.Error("nTime incorrect: expect from %d to %d, got %d", job.GetBlockTemplate.CurTime, submitTime.Unix()+7, uint32(nTimeInt))
+		log.Error("nTime incorrect: expect from", job.GetBlockTemplate.CurTime, " to ", submitTime.Unix()+7, ", got ", uint32(nTimeInt))
 		return &types.Share{
 			JobId:      jobId,
 			RemoteAddr: ipAddr,

@@ -29,7 +29,6 @@ type Server struct {
 	BanningManager      *banningManager.BanningManager
 
 	rebroadcastTicker *time.Ticker
-	tickerReset       chan struct{}
 }
 
 func NewStratumServer(options *config.Options, jm *jobManager.JobManager, bm *banningManager.BanningManager) *Server {
@@ -72,16 +71,11 @@ func (ss *Server) Init() (portStarted []int) {
 	}
 
 	go func() {
-		ss.tickerReset = make(chan struct{})
 		ss.rebroadcastTicker = time.NewTicker(time.Duration(ss.Options.JobRebroadcastTimeout) * time.Second)
 		defer ss.rebroadcastTicker.Stop()
 		for {
-			select {
-			case <-ss.tickerReset:
-				ss.rebroadcastTicker = time.NewTicker(time.Duration(ss.Options.JobRebroadcastTimeout) * time.Second)
-			case <-ss.rebroadcastTicker.C:
-				ss.BroadcastMiningJobs(ss.JobManager.CurrentJob.GetJobParams())
-			}
+			<-ss.rebroadcastTicker.C
+			ss.BroadcastMiningJobs(ss.JobManager.CurrentJob.GetJobParams())
 		}
 	}()
 
@@ -129,7 +123,6 @@ func (ss *Server) BroadcastMiningJobs(jobParams []interface{}) {
 	for clientId := range ss.StratumClients {
 		ss.StratumClients[clientId].SendMiningJob(jobParams)
 	}
-	ss.tickerReset <- struct{}{}
 }
 
 func (ss *Server) RemoveStratumClientBySubscriptionId(subscriptionId []byte) {
