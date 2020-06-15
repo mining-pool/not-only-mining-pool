@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/mining-pool/go-pool-server/config"
 	"testing"
+	"time"
 )
 
 func TestNewPeer(t *testing.T) {
@@ -19,7 +20,11 @@ func TestNewPeer(t *testing.T) {
 	peer := NewPeer(70015, &options)
 	peer.Init()
 
+	c := time.After(time.Minute)
 	for {
-		select {}
+		select {
+		case <-c:
+			return
+		}
 	}
 }

@@ -38,7 +38,3 @@ func TestX11Hash(t *testing.T) {
 		t.Fail()
 	}
 }
-
-func TestUnsupportedHash(t *testing.T) {
-	GetHashFunc("unknown")
-}

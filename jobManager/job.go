@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"math/big"
+	"time"
 
 	"github.com/mining-pool/go-pool-server/algorithm"
 	"github.com/mining-pool/go-pool-server/config"
@@ -17,7 +18,6 @@ import (
 type Job struct {
 	GetBlockTemplate      *daemonManager.GetBlockTemplate
 	Submits               []string
-	jobParams             []interface{}
 	GenerationTransaction [][]byte
 	JobId                 string
 	PrevHashReversed      string
@@ -57,7 +57,8 @@ func NewJob(jobId string, rpcData *daemonManager.GetBlockTemplate, poolAddressSc
 		}
 	}
 
-	merkleTree := merkletree.NewMerkleTree(GetTransactionBytes(rpcData.Transactions))
+	txsBytes := GetTransactionBytes(rpcData.Transactions)
+	merkleTree := merkletree.NewMerkleTree(txsBytes)
 	merkleBranch := merkletree.GetMerkleHashes(merkleTree.Steps)
 	generationTransaction := transactions.CreateGeneration(
 		rpcData,
@@ -83,7 +84,6 @@ func NewJob(jobId string, rpcData *daemonManager.GetBlockTemplate, poolAddressSc
 	return &Job{
 		GetBlockTemplate:      rpcData,
 		Submits:               nil,
-		jobParams:             nil,
 		GenerationTransaction: generationTransaction,
 		JobId:                 jobId,
 		PrevHashReversed:      prevHashReversed,
@@ -170,21 +170,17 @@ func (j *Job) RegisterSubmit(extraNonce1, extraNonce2, nTime, nonce string) bool
 }
 
 func (j *Job) GetJobParams() []interface{} {
-	if j.jobParams == nil {
-		j.jobParams = []interface{}{
-			j.JobId,
-			j.PrevHashReversed,
-			hex.EncodeToString(j.GenerationTransaction[0]),
-			hex.EncodeToString(j.GenerationTransaction[1]),
-			j.MerkleBranch,
-			hex.EncodeToString(utils.PackInt32BE(j.GetBlockTemplate.Version)),
-			j.GetBlockTemplate.Bits,
-			hex.EncodeToString(utils.PackUint32BE(j.GetBlockTemplate.CurTime)),
-			true,
-		}
+	return []interface{}{
+		j.JobId,
+		j.PrevHashReversed,
+		hex.EncodeToString(j.GenerationTransaction[0]),
+		hex.EncodeToString(j.GenerationTransaction[1]),
+		j.MerkleBranch,
+		hex.EncodeToString(utils.PackInt32BE(j.GetBlockTemplate.Version)),
+		j.GetBlockTemplate.Bits,
+		hex.EncodeToString(utils.PackUint32BE(uint32(time.Now().Unix()))), // Updated: implement time rolling
+		true,
 	}
-
-	return j.jobParams
 }
 
 func GetTransactionBytes(txs []*daemonManager.TxParams) [][]byte {

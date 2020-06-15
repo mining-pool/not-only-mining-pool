@@ -11,6 +11,7 @@ type MerkleTree struct {
 	Steps [][]byte
 }
 
+// NewMerkleTree receives a list of tx raw bytes and return a new MerkleTree instance
 func NewMerkleTree(data [][]byte) *MerkleTree {
 	return &MerkleTree{
 		Data:  data,
@@ -57,9 +58,12 @@ func (mt *MerkleTree) WithFirst(f []byte) []byte {
 }
 
 func GetMerkleHashes(steps [][]byte) []string {
-	var hashes []string
+	hashes := make([]string, len(steps))
 	for i := 0; i < len(steps); i++ {
-		hashes = append(hashes, hex.EncodeToString(steps[i]))
+		hash := make([]byte, 32)
+		copy(hash, steps[i])
+		hashes[i] = hex.EncodeToString(hash)
 	}
+
 	return hashes
 }
