@@ -69,14 +69,14 @@ func NewJob(jobId string, rpcData *daemonManager.GetBlockTemplate, poolAddressSc
 		recipients,
 	)
 
-	var txData [][]byte
+	txData := make([][]byte, len(rpcData.Transactions))
 	for i := 0; i < len(rpcData.Transactions); i++ {
 		data, err := hex.DecodeString(rpcData.Transactions[i].Data)
 		if err != nil {
 			log.Panic("failed to decode tx: ", rpcData.Transactions[i])
 		}
 
-		txData = append(txData, data)
+		txData[i] = data
 	}
 
 	log.Info("New Job, diff: ", bigDiff)
@@ -147,12 +147,19 @@ func (j *Job) SerializeHeader(merkleRoot, nTime, nonce []byte) []byte {
 	bits, _ := hex.DecodeString(j.GetBlockTemplate.Bits)
 	prevHash, _ := hex.DecodeString(j.GetBlockTemplate.PreviousBlockHash)
 
-	copy(header[0:], nonce)                                                     //4
-	copy(header[4:], bits)                                                      //4
-	copy(header[8:], nTime)                                                     //4
-	copy(header[12:], merkleRoot)                                               //32
-	copy(header[44:], prevHash)                                                 //32
-	binary.BigEndian.PutUint32(header[76:], uint32(j.GetBlockTemplate.Version)) //4
+	pos := 0
+	copy(header[pos:], nonce) //4
+	pos += len(nonce)
+	copy(header[pos:], bits) //4
+	pos += len(bits)
+	copy(header[pos:], nTime) //4
+	pos += len(nTime)
+	copy(header[pos:], merkleRoot) //32
+	pos += len(merkleRoot)
+	copy(header[pos:], prevHash) //32
+	pos += len(prevHash)
+	binary.BigEndian.PutUint32(header[pos:], uint32(j.GetBlockTemplate.Version)) //4
+	pos += 4
 
 	return utils.ReverseBytes(header)
 }
@@ -169,7 +176,7 @@ func (j *Job) RegisterSubmit(extraNonce1, extraNonce2, nTime, nonce string) bool
 	return false
 }
 
-func (j *Job) GetJobParams() []interface{} {
+func (j *Job) GetJobParams(forceUpdate bool) []interface{} {
 	return []interface{}{
 		j.JobId,
 		j.PrevHashReversed,
@@ -179,20 +186,20 @@ func (j *Job) GetJobParams() []interface{} {
 		hex.EncodeToString(utils.PackInt32BE(j.GetBlockTemplate.Version)),
 		j.GetBlockTemplate.Bits,
 		hex.EncodeToString(utils.PackUint32BE(uint32(time.Now().Unix()))), // Updated: implement time rolling
-		true,
+		forceUpdate,
 	}
 }
 
 func GetTransactionBytes(txs []*daemonManager.TxParams) [][]byte {
-	var txHashes [][]byte
+	txHashes := make([][]byte, len(txs))
 	for i := 0; i < len(txs); i++ {
 		if txs[i].TxId != "" {
-			txHashes = append(txHashes, utils.Uint256BytesFromHash(txs[i].TxId))
+			txHashes[i] = utils.Uint256BytesFromHash(txs[i].TxId)
 			continue
 		}
 
 		if txs[i].Hash != "" {
-			txHashes = append(txHashes, utils.Uint256BytesFromHash(txs[i].Hash))
+			txHashes[i] = utils.Uint256BytesFromHash(txs[i].Hash)
 			continue
 		}
 

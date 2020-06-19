@@ -60,9 +60,9 @@ func (mt *MerkleTree) WithFirst(f []byte) []byte {
 func GetMerkleHashes(steps [][]byte) []string {
 	hashes := make([]string, len(steps))
 	for i := 0; i < len(steps); i++ {
-		hash := make([]byte, 32)
-		copy(hash, steps[i])
-		hashes[i] = hex.EncodeToString(hash)
+		//hash := make([]byte, 32)
+		//copy(hash, steps[i])
+		hashes[i] = hex.EncodeToString(steps[i])
 	}
 
 	return hashes

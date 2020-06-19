@@ -34,7 +34,7 @@ func NewStorage(coinName string, options *config.RedisOptions) *DB {
 	}
 }
 
-func (s *DB) PutShare(share *types.Share) {
+func (s *DB) PutShare(share *types.Share, accepted bool) {
 	now := time.Now().Unix()
 	strNow := strconv.FormatInt(now, 10)
 
@@ -54,24 +54,28 @@ func (s *DB) PutShare(share *types.Share) {
 		ppl.HIncrBy(s.coin+":stats", "invalidShares", 1)
 	}
 
-	if share.BlockHex != "" {
-		ppl.Rename(s.coin+":shares:roundCount", s.coin+":shares:round"+strconv.FormatInt(share.BlockHeight, 10))
-		ppl.Rename(s.coin+":shares:timesCount", strings.Join([]string{
-			s.coin,
-			"shares:round",
-			strconv.FormatInt(share.BlockHeight, 10),
-		}, ":"))
-		ppl.SAdd(s.coin+":blocksPending", strings.Join([]string{
-			s.coin,
-			share.BlockHash,
-			share.TxHash,
-			strconv.FormatInt(share.BlockHeight, 10),
-			share.Miner,
-			strNow,
-		}, ":"))
-		ppl.HIncrBy(s.coin+":stats", "validBlocks", 1)
-	} else {
-		ppl.HIncrBy(s.coin+":stats", "invalidBlocks", 1)
+	// when mined one => seal roundCount,
+	// BlockHex is not accuracy, maybe out of date
+	if len(share.BlockHex) > 0 {
+		if accepted {
+			ppl.Rename(s.coin+":shares:roundCount", s.coin+":shares:round"+strconv.FormatInt(share.BlockHeight, 10))
+			//ppl.Rename(s.coin+":shares:timesCount", strings.Join([]string{
+			//	s.coin,
+			//	"shares:round",
+			//	strconv.FormatInt(share.BlockHeight, 10),
+			//}, ":"))
+			ppl.SAdd(s.coin+":blocksPending", strings.Join([]string{
+				s.coin,
+				share.BlockHash,
+				share.TxHash,
+				strconv.FormatInt(share.BlockHeight, 10),
+				share.Miner,
+				strNow,
+			}, ":"))
+			ppl.HIncrBy(s.coin+":stats", "validBlocks", 1)
+		} else {
+			ppl.HIncrBy(s.coin+":stats", "invalidBlocks", 1)
+		}
 	}
 
 	_, err := ppl.Exec()

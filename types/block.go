@@ -1,5 +1,6 @@
 package types
 
+// Block is a basic type for db storage
 type Block struct {
 	Hash              string   `json:"hash"`
 	Confirmations     int      `json:"confirmations"`

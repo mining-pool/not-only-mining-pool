@@ -1,6 +1,7 @@
 package stratum
 
 import (
+	"bytes"
 	"crypto/tls"
 	"encoding/binary"
 	logging "github.com/ipfs/go-log"
@@ -52,7 +53,7 @@ func (ss *Server) Init() (portStarted []int) {
 		if options.TLS != nil {
 			ss.Listener, err = tls.Listen("tcp", ":"+strconv.Itoa(port), options.TLS.ToTLSConfig())
 		} else {
-			ss.Listener, _ = net.Listen("tcp", ":"+strconv.Itoa(port))
+			ss.Listener, err = net.Listen("tcp", ":"+strconv.Itoa(port))
 		}
 
 		if err != nil {
@@ -67,15 +68,23 @@ func (ss *Server) Init() (portStarted []int) {
 	}
 
 	if len(portStarted) == 0 {
-		log.Fatal("No port listened")
+		log.Panic("No port listened")
 	}
 
 	go func() {
+		var id string
+		var txs []byte
 		ss.rebroadcastTicker = time.NewTicker(time.Duration(ss.Options.JobRebroadcastTimeout) * time.Second)
+		defer log.Warn("broadcaster stopped")
 		defer ss.rebroadcastTicker.Stop()
 		for {
 			<-ss.rebroadcastTicker.C
-			ss.BroadcastMiningJobs(ss.JobManager.CurrentJob.GetJobParams())
+			go ss.BroadcastCurrentMiningJob(ss.JobManager.CurrentJob.GetJobParams(
+				id != ss.JobManager.CurrentJob.JobId || !bytes.Equal(txs, ss.JobManager.CurrentJob.TransactionData),
+			))
+
+			id = ss.JobManager.CurrentJob.JobId
+			txs = ss.JobManager.CurrentJob.TransactionData
 		}
 	}()
 
@@ -118,7 +127,7 @@ func (ss *Server) HandleNewClient(socket net.Conn) []byte {
 	return subscriptionID
 }
 
-func (ss *Server) BroadcastMiningJobs(jobParams []interface{}) {
+func (ss *Server) BroadcastCurrentMiningJob(jobParams []interface{}) {
 	log.Info("broadcasting job params")
 	for clientId := range ss.StratumClients {
 		ss.StratumClients[clientId].SendMiningJob(jobParams)

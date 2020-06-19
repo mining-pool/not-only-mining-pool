@@ -46,6 +46,7 @@ func NewAPIServer(options *config.Options, storage *storage.DB) *Server {
 	s.RegisterFunc("/miner", s.minerIndexFunc)
 	//s.RegisterFunc("/miner/{miner}", s.minerFunc)
 	//s.RegisterFunc("/miner/{miner}/{rig}", s.minerRigFunc)
+	s.Use(mux.CORSMethodMiddleware(s.Router))
 
 	http.Handle("/", s)
 
@@ -96,6 +97,6 @@ func (s *Server) configFunc(writer http.ResponseWriter, r *http.Request) {
 	_, _ = writer.Write(raw)
 }
 
-func (s *Server) minerIndexFunc(writer http.ResponseWriter, request *http.Request) {
+func (s *Server) minerIndexFunc(writer http.ResponseWriter, r *http.Request) {
 
 }

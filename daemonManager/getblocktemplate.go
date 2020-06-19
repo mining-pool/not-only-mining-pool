@@ -30,59 +30,59 @@ type TxParams struct {
 type GetBlockTemplate struct {
 	// Base fields from BIP 0022.  CoinbaseAux is optional.  One of
 	// CoinbaseTxn or CoinbaseValue must be specified, but not both.
-	Version           int32       `json:"version"`
-	Bits              string      `json:"bits"`
-	CurTime           uint32      `json:"curtime"`
-	Height            int64       `json:"height"`
-	Rules             []string    `json:"rules"`
-	PreviousBlockHash string      `json:"previousblockhash"`
-	PreviousBits      string      `json:"previousbits"`
-	SigOpLimit        int64       `json:"sigoplimit,omitempty"`
-	SizeLimit         int64       `json:"sizelimit,omitempty"`
-	WeightLimit       int64       `json:"weightlimit,omitempty"`
-	WorkID            string      `json:"workid,omitempty"`
-	Transactions      []*TxParams `json:"transactions"`
-	CoinbaseTxn       *TxParams   `json:"coinbasetxn,omitempty"` // Bitcoin does not produce the coinbasetxn for you, you will have to build it manually.
-	CoinbaseAux       struct {
+	Version int32  `json:"version"`
+	Bits    string `json:"bits"`
+	CurTime uint32 `json:"curtime"`
+	Height  int64  `json:"height"`
+	//Rules             []string    `json:"rules"`
+	PreviousBlockHash string `json:"previousblockhash"`
+	//PreviousBits      string      `json:"previousbits"`
+	//SigOpLimit        int64       `json:"sigoplimit,omitempty"`
+	//SizeLimit         int64       `json:"sizelimit,omitempty"`
+	//WeightLimit       int64       `json:"weightlimit,omitempty"`
+	//WorkID            string      `json:"workid,omitempty"`
+	Transactions []*TxParams `json:"transactions"`
+	//CoinbaseTxn       *TxParams   `json:"coinbasetxn,omitempty"` // Bitcoin does not produce the coinbasetxn for you, you will have to build it manually.
+	CoinbaseAux struct {
 		Flags string `json:"flags"`
 	} `json:"coinbaseaux"`
 	CoinbaseValue uint64 `json:"coinbasevalue"`
 
 	// Block proposal from BIP 0023.
-	Capabilities []string `json:"capabilities,omitempty"`
-	RejectReason string   `json:"reject-reason,omitempty"`
+	//Capabilities []string `json:"capabilities,omitempty"`
+	//RejectReason string   `json:"reject-reason,omitempty"`
 
-	Vbavailable struct {
-	} `json:"vbavailable"`
-	Vbrequired int `json:"vbrequired"`
+	//Vbavailable struct {
+	//} `json:"vbavailable"`
+	//Vbrequired int `json:"vbrequired"`
 
 	// Witness commitment defined in BIP 0141.
 	DefaultWitnessCommitment string `json:"default_witness_commitment,omitempty"`
 
 	// Optional long polling from BIP 0022.
-	LongPollID  string `json:"longpollid,omitempty"`
-	LongPollURI string `json:"longpolluri,omitempty"`
-	SubmitOld   *bool  `json:"submitold,omitempty"`
+	//LongPollID  string `json:"longpollid,omitempty"`
+	//LongPollURI string `json:"longpolluri,omitempty"`
+	//SubmitOld   *bool  `json:"submitold,omitempty"`
 
 	// Basic poolManager extension from BIP 0023.
-	Target  string `json:"target,omitempty"`
-	Expires int64  `json:"expires,omitempty"`
+	Target string `json:"target,omitempty"`
+	//Expires int64  `json:"expires,omitempty"`
 
 	// Mutations from BIP 0023
-	MaxTime    int64    `json:"maxtime,omitempty"`
-	MinTime    int64    `json:"mintime,omitempty"`
-	Mutable    []string `json:"mutable,omitempty"`
-	NonceRange string   `json:"noncerange,omitempty"`
+	//MaxTime    int64    `json:"maxtime,omitempty"`
+	//MinTime    int64    `json:"mintime,omitempty"`
+	//Mutable    []string `json:"mutable,omitempty"`
+	//NonceRange string   `json:"noncerange,omitempty"`
 
 	// Dash
-	Masternode                 []MasternodeParams `json:"masternode"`
-	MasternodePaymentsStarted  bool               `json:"masternode_payments_started"`
-	MasternodePaymentsEnforced bool               `json:"masternode_payments_enforced"`
+	Masternode []MasternodeParams `json:"masternode"`
+	//MasternodePaymentsStarted  bool               `json:"masternode_payments_started"`
+	//MasternodePaymentsEnforced bool               `json:"masternode_payments_enforced"`
 
-	Superblock         []SuperblockParams `json:"superblock"`
-	SuperblocksStarted bool               `json:"superblocks_started"`
-	SuperblocksEnabled bool               `json:"superblocks_enabled"`
-	CoinbasePayload    string             `json:"coinbase_payload"`
+	Superblock []SuperblockParams `json:"superblock"`
+	//SuperblocksStarted bool               `json:"superblocks_started"`
+	//SuperblocksEnabled bool               `json:"superblocks_enabled"`
+	CoinbasePayload string `json:"coinbase_payload"`
 
 	// unknown
 	Votes              []string

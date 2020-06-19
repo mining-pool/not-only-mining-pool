@@ -13,6 +13,7 @@ func TestNewMerkleTree(t *testing.T) {
 	}
 
 	if GetMerkleHashes(mt1.Steps)[0] != "776f726c64" {
+		t.Log(GetMerkleHashes(mt1.Steps)[0])
 		t.Fail()
 	}
 

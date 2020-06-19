@@ -3,18 +3,17 @@ package jobManager
 import (
 	"encoding/hex"
 	logging "github.com/ipfs/go-log"
-	"math/big"
-	"net"
-	"strconv"
-	"strings"
-	"time"
-
 	"github.com/mining-pool/go-pool-server/algorithm"
 	"github.com/mining-pool/go-pool-server/config"
 	"github.com/mining-pool/go-pool-server/daemonManager"
 	"github.com/mining-pool/go-pool-server/storage"
 	"github.com/mining-pool/go-pool-server/types"
 	"github.com/mining-pool/go-pool-server/utils"
+	"math/big"
+	"net"
+	"strconv"
+	"strings"
+	"time"
 )
 
 var log = logging.Logger("jobMgr")
@@ -75,7 +74,7 @@ func (jm *JobManager) ProcessShare(share *types.Share) {
 		isAccepted, tx := jm.CheckBlockAccepted(share.BlockHex)
 		share.TxHash = tx
 		if isAccepted {
-			go jm.Storage.PutShare(share)
+			go jm.Storage.PutShare(share, isAccepted)
 			log.Info("Block ", share.BlockHex, " Accepted! generation tx: ", share.TxHash, ". Wait for pendding!")
 		}
 
@@ -87,7 +86,7 @@ func (jm *JobManager) ProcessShare(share *types.Share) {
 		return
 	} else if share.ErrorCode == 0 {
 		// notValidBlock but isValidShare
-		go jm.Storage.PutShare(share)
+		go jm.Storage.PutShare(share, false)
 		return
 	}
 }
@@ -227,7 +226,7 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 		log.Error(err)
 	}
 	if uint32(nTimeInt) < job.GetBlockTemplate.CurTime || nTimeInt > submitTime.Unix()+7 {
-		log.Error("nTime incorrect: expect from", job.GetBlockTemplate.CurTime, " to ", submitTime.Unix()+7, ", got ", uint32(nTimeInt))
+		log.Error("nTime incorrect: expect from ", job.GetBlockTemplate.CurTime, " to ", submitTime.Unix()+7, ", got ", uint32(nTimeInt))
 		return &types.Share{
 			JobId:      jobId,
 			RemoteAddr: ipAddr,
@@ -284,7 +283,7 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 	)
 	shareDiff, _ := bigShareDiff.Float64()
 
-	//Check if share is a block candidate (matched network difficulty)
+	//Check if share is a block candidate (reaches network difficulty)
 	if job.Target.Cmp(headerHashBigInt) > 0 {
 		blockHex := hex.EncodeToString(job.SerializeBlock(headerBytes, coinbaseBytes))
 		var blockHash string
@@ -337,11 +336,14 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 		}
 	}
 
+	// share reaches the miner's difficulty but doesnt not reach the block's
 	return &types.Share{
 		JobId:      jobId,
 		RemoteAddr: ipAddr,
 		Miner:      miner,
 		Rig:        rig,
+
+		Diff: shareDiff,
 	}
 }
 

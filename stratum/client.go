@@ -200,7 +200,7 @@ func (sc *Client) HandleAuthorize(message *daemonManager.JsonRpcRequest, replyTo
 	// the init Diff for miners
 	log.Info("sending init difficulty: ", sc.Options.Ports[sc.Socket.LocalAddr().(*net.TCPAddr).Port].Diff)
 	sc.SendDifficulty(big.NewFloat(sc.Options.Ports[sc.Socket.LocalAddr().(*net.TCPAddr).Port].Diff))
-	sc.SendMiningJob(sc.JobManager.CurrentJob.GetJobParams())
+	sc.SendMiningJob(sc.JobManager.CurrentJob.GetJobParams(true))
 }
 
 // TODO: Can be DIY
@@ -265,7 +265,7 @@ func (sc *Client) HandleSubmit(message *daemonManager.JsonRpcRequest) {
 	}
 
 	if share.ErrorCode == types.ErrNTimeOutOfRange {
-		sc.SendMiningJob(sc.JobManager.CurrentJob.GetJobParams())
+		sc.SendMiningJob(sc.JobManager.CurrentJob.GetJobParams(true))
 	}
 
 	// vardiff

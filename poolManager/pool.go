@@ -146,7 +146,7 @@ func (p *Pool) AttachMiners(miners []*stratum.Client) {
 		p.StratumServer.ManuallyAddStratumClient(miners[i])
 	}
 
-	p.StratumServer.BroadcastMiningJobs(p.JobManager.CurrentJob.GetJobParams())
+	p.StratumServer.BroadcastCurrentMiningJob(p.JobManager.CurrentJob.GetJobParams(true))
 }
 
 func (p *Pool) StartStratumServer() {
