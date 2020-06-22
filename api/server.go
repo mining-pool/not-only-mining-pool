@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"github.com/gorilla/mux"
 	logging "github.com/ipfs/go-log"
-	"github.com/mining-pool/go-pool-server/config"
-	"github.com/mining-pool/go-pool-server/storage"
+	"github.com/mining-pool/not-only-mining-pool/config"
+	"github.com/mining-pool/not-only-mining-pool/storage"
 	"net/http"
 )
 

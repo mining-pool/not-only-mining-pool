@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/go-pool-server.iml" filepath="$PROJECT_DIR$/.idea/go-pool-server.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/not-only-mining-pool.iml" filepath="$PROJECT_DIR$/.idea/not-only-mining-pool.iml" />
     </modules>
   </component>
 </project>

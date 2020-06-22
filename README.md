@@ -1,4 +1,4 @@
-# go-pool-server
+# Not-Only-Mining-Pool(NOMP)
 
 BitcoinCore(bitcoind)-variants' pool written in golang
 

@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
-	"github.com/mining-pool/go-pool-server/config"
-	"github.com/mining-pool/go-pool-server/daemonManager"
-	"github.com/mining-pool/go-pool-server/utils"
+	"github.com/mining-pool/not-only-mining-pool/config"
+	"github.com/mining-pool/not-only-mining-pool/daemonManager"
+	"github.com/mining-pool/not-only-mining-pool/utils"
 	"testing"
 )
 

@@ -9,11 +9,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/mining-pool/go-pool-server/banningManager"
-	"github.com/mining-pool/go-pool-server/config"
-	"github.com/mining-pool/go-pool-server/daemonManager"
-	"github.com/mining-pool/go-pool-server/jobManager"
-	"github.com/mining-pool/go-pool-server/vardiff"
+	"github.com/mining-pool/not-only-mining-pool/banningManager"
+	"github.com/mining-pool/not-only-mining-pool/config"
+	"github.com/mining-pool/not-only-mining-pool/daemonManager"
+	"github.com/mining-pool/not-only-mining-pool/jobManager"
+	"github.com/mining-pool/not-only-mining-pool/vardiff"
 )
 
 var log = logging.Logger("stratum")

@@ -2,7 +2,7 @@ package daemonManager
 
 import (
 	"encoding/json"
-	"github.com/mining-pool/go-pool-server/utils"
+	"github.com/mining-pool/not-only-mining-pool/utils"
 )
 
 // submitblock has no result

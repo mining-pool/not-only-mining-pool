@@ -1,7 +1,7 @@
 package vardiff
 
 import (
-	"github.com/mining-pool/go-pool-server/config"
+	"github.com/mining-pool/not-only-mining-pool/config"
 	"time"
 )
 

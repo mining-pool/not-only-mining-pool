@@ -2,7 +2,7 @@ package algorithm
 
 import (
 	logging "github.com/ipfs/go-log"
-	"github.com/mining-pool/go-pool-server/utils"
+	"github.com/mining-pool/not-only-mining-pool/utils"
 	"github.com/samli88/go-x11-hash"
 	"golang.org/x/crypto/scrypt"
 	"math/big"

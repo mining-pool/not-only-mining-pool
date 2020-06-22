@@ -7,12 +7,12 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/mining-pool/go-pool-server/algorithm"
-	"github.com/mining-pool/go-pool-server/config"
-	"github.com/mining-pool/go-pool-server/daemonManager"
-	"github.com/mining-pool/go-pool-server/merkletree"
-	"github.com/mining-pool/go-pool-server/transactions"
-	"github.com/mining-pool/go-pool-server/utils"
+	"github.com/mining-pool/not-only-mining-pool/algorithm"
+	"github.com/mining-pool/not-only-mining-pool/config"
+	"github.com/mining-pool/not-only-mining-pool/daemonManager"
+	"github.com/mining-pool/not-only-mining-pool/merkletree"
+	"github.com/mining-pool/not-only-mining-pool/transactions"
+	"github.com/mining-pool/not-only-mining-pool/utils"
 )
 
 type Job struct {

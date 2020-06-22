@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"flag"
 	logging "github.com/ipfs/go-log"
-	"github.com/mining-pool/go-pool-server/config"
-	"github.com/mining-pool/go-pool-server/poolManager"
-	"github.com/mining-pool/go-pool-server/utils"
+	"github.com/mining-pool/not-only-mining-pool/config"
+	"github.com/mining-pool/not-only-mining-pool/poolManager"
+	"github.com/mining-pool/not-only-mining-pool/utils"
 	"os"
 )
 

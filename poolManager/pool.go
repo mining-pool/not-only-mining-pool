@@ -10,15 +10,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mining-pool/go-pool-server/api"
-	"github.com/mining-pool/go-pool-server/banningManager"
-	"github.com/mining-pool/go-pool-server/config"
-	"github.com/mining-pool/go-pool-server/daemonManager"
-	"github.com/mining-pool/go-pool-server/jobManager"
-	"github.com/mining-pool/go-pool-server/p2pManager"
-	"github.com/mining-pool/go-pool-server/storage"
-	"github.com/mining-pool/go-pool-server/stratum"
-	"github.com/mining-pool/go-pool-server/utils"
+	"github.com/mining-pool/not-only-mining-pool/api"
+	"github.com/mining-pool/not-only-mining-pool/banningManager"
+	"github.com/mining-pool/not-only-mining-pool/config"
+	"github.com/mining-pool/not-only-mining-pool/daemonManager"
+	"github.com/mining-pool/not-only-mining-pool/jobManager"
+	"github.com/mining-pool/not-only-mining-pool/p2pManager"
+	"github.com/mining-pool/not-only-mining-pool/storage"
+	"github.com/mining-pool/not-only-mining-pool/stratum"
+	"github.com/mining-pool/not-only-mining-pool/utils"
 )
 
 var log = logging.Logger("poolMgr")

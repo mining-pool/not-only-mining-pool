@@ -3,8 +3,8 @@ package storage
 import (
 	"github.com/go-redis/redis/v7"
 	logging "github.com/ipfs/go-log"
-	"github.com/mining-pool/go-pool-server/config"
-	"github.com/mining-pool/go-pool-server/types"
+	"github.com/mining-pool/not-only-mining-pool/config"
+	"github.com/mining-pool/not-only-mining-pool/types"
 	"strconv"
 	"strings"
 	"time"
