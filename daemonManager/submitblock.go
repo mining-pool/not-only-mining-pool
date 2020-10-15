@@ -2,6 +2,7 @@ package daemonManager
 
 import (
 	"encoding/json"
+
 	"github.com/mining-pool/not-only-mining-pool/utils"
 )
 

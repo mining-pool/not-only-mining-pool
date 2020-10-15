@@ -3,6 +3,7 @@ package merkletree
 import (
 	"bytes"
 	"encoding/hex"
+
 	"github.com/mining-pool/not-only-mining-pool/utils"
 )
 
@@ -60,8 +61,8 @@ func (mt *MerkleTree) WithFirst(f []byte) []byte {
 func GetMerkleHashes(steps [][]byte) []string {
 	hashes := make([]string, len(steps))
 	for i := 0; i < len(steps); i++ {
-		//hash := make([]byte, 32)
-		//copy(hash, steps[i])
+		// hash := make([]byte, 32)
+		// copy(hash, steps[i])
 		hashes[i] = hex.EncodeToString(steps[i])
 	}
 

@@ -8,13 +8,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	logging "github.com/ipfs/go-log"
-	"github.com/maoxs2/go-bech32"
-	"github.com/mr-tron/base58"
 	"math/big"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/c0mm4nd/go-bech32"
+	logging "github.com/ipfs/go-log/v2"
+	"github.com/mr-tron/base58"
 )
 
 var log = logging.Logger("utils")
@@ -115,7 +116,6 @@ func VarIntBytes(n uint64) []byte {
 	buff[0] = 0xFF
 	binary.LittleEndian.PutUint64(buff[1:], uint64(n))
 	return buff
-
 }
 
 func VarStringBytes(str string) []byte {
@@ -201,7 +201,7 @@ func Range(start, stop, step int) []int {
 		return []int{}
 	}
 
-	var result = make([]int, 0)
+	result := make([]int, 0)
 	i := start
 	for {
 		if step > 0 {
@@ -238,7 +238,7 @@ func BytesIndexOf(data [][]byte, element []byte) int {
 			return k
 		}
 	}
-	return -1 //not found.
+	return -1 // not found.
 }
 
 func StringsIndexOf(data []string, element string) int {
@@ -247,7 +247,7 @@ func StringsIndexOf(data []string, element string) int {
 			return k
 		}
 	}
-	return -1 //not found.
+	return -1 // not found.
 }
 
 func BigIntFromBitsHex(bits string) *big.Int {

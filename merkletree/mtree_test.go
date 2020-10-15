@@ -16,5 +16,4 @@ func TestNewMerkleTree(t *testing.T) {
 		t.Log(GetMerkleHashes(mt1.Steps)[0])
 		t.Fail()
 	}
-
 }

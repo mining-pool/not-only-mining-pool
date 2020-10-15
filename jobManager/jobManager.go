@@ -2,18 +2,19 @@ package jobManager
 
 import (
 	"encoding/hex"
-	logging "github.com/ipfs/go-log"
+	"math/big"
+	"net"
+	"strconv"
+	"strings"
+	"time"
+
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/mining-pool/not-only-mining-pool/algorithm"
 	"github.com/mining-pool/not-only-mining-pool/config"
 	"github.com/mining-pool/not-only-mining-pool/daemonManager"
 	"github.com/mining-pool/not-only-mining-pool/storage"
 	"github.com/mining-pool/not-only-mining-pool/types"
 	"github.com/mining-pool/not-only-mining-pool/utils"
-	"math/big"
-	"net"
-	"strconv"
-	"strings"
-	"time"
 )
 
 var log = logging.Logger("jobMgr")
@@ -66,7 +67,7 @@ func (jm *JobManager) Init(gbt *daemonManager.GetBlockTemplate) {
 }
 
 func (jm *JobManager) ProcessShare(share *types.Share) {
-	//isValidBlock
+	// isValidBlock
 	if share.BlockHex != "" {
 		log.Info("submitting new Block: ", share.BlockHex)
 		jm.DaemonManager.SubmitBlock(share.BlockHex)
@@ -283,7 +284,7 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 	)
 	shareDiff, _ := bigShareDiff.Float64()
 
-	//Check if share is a block candidate (reaches network difficulty)
+	// Check if share is a block candidate (reaches network difficulty)
 	if job.Target.Cmp(headerHashBigInt) > 0 {
 		blockHex := hex.EncodeToString(job.SerializeBlock(headerBytes, coinbaseBytes))
 		var blockHash string
@@ -310,11 +311,10 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 		}
 	}
 
-	//Check if share didn't reached the miner's difficulty)
+	// Check if share didn't reached the miner's difficulty)
 	if new(big.Float).Quo(bigShareDiff, diff).Cmp(big.NewFloat(0.99)) < 0 {
-		//Check if share matched a previous difficulty from before a vardiff retarget
+		// Check if share matched a previous difficulty from before a vardiff retarget
 		if prevDiff != nil && bigShareDiff.Cmp(prevDiff) >= 0 {
-
 			return &types.Share{
 				JobId:      jobId,
 				RemoteAddr: ipAddr,

@@ -1,8 +1,9 @@
 package banningManager
 
 import (
-	"github.com/mining-pool/not-only-mining-pool/config"
 	"time"
+
+	"github.com/mining-pool/not-only-mining-pool/config"
 )
 
 type BanningManager struct {
@@ -40,7 +41,7 @@ func (bm *BanningManager) CheckBan(strRemoteAddr string) (shouldCloseSocket bool
 		timeLeft := time.Duration(bm.Options.Time)*time.Second - bannedTimeAgo
 		if timeLeft > 0 {
 			return true
-			//client.Socket.Close()
+			// client.Socket.Close()
 			// kickedBannedIP
 		} else {
 			delete(bm.BannedIPList, strRemoteAddr)

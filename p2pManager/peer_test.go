@@ -2,9 +2,10 @@ package p2pManager
 
 import (
 	"encoding/json"
-	"github.com/mining-pool/not-only-mining-pool/config"
 	"testing"
 	"time"
+
+	"github.com/mining-pool/not-only-mining-pool/config"
 )
 
 func TestNewPeer(t *testing.T) {

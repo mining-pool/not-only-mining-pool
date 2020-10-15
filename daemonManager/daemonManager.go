@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	logging "github.com/ipfs/go-log"
-	"github.com/mining-pool/not-only-mining-pool/config"
-	"github.com/mining-pool/not-only-mining-pool/utils"
 	"io/ioutil"
 	"net/http"
 	"strconv"
+
+	logging "github.com/ipfs/go-log/v2"
+	"github.com/mining-pool/not-only-mining-pool/config"
+	"github.com/mining-pool/not-only-mining-pool/utils"
 )
 
 var log = logging.Logger("daemonMgr")
@@ -61,6 +62,13 @@ func (dm *DaemonManager) IsAllOnline() bool {
 }
 
 func (dm *DaemonManager) DoHttpRequest(daemon *config.DaemonOptions, reqRawData []byte) (*http.Response, error) {
+	var transport *http.Transport
+	if daemon.TLS != nil {
+		transport = &http.Transport{
+			TLSClientConfig: daemon.TLS.ToTLSConfig(),
+		}
+	}
+
 	req, err := http.NewRequest("POST", daemon.URL(), bytes.NewReader(reqRawData))
 	if err != nil {
 		log.Panic(err)
@@ -68,7 +76,7 @@ func (dm *DaemonManager) DoHttpRequest(daemon *config.DaemonOptions, reqRawData 
 	if daemon.User != "" {
 		req.SetBasicAuth(daemon.User, daemon.Password)
 	}
-	client := &http.Client{}
+	client := &http.Client{Transport: transport}
 	return client.Do(req)
 }
 

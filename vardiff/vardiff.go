@@ -1,8 +1,9 @@
 package vardiff
 
 import (
-	"github.com/mining-pool/not-only-mining-pool/config"
 	"time"
+
+	"github.com/mining-pool/not-only-mining-pool/config"
 )
 
 type VarDiff struct {
@@ -58,7 +59,7 @@ func (vd *VarDiff) CalcNextDiff(currentDiff float64) (newDiff float64) {
 	avg := vd.TimeBuffer.Avg()
 	ddiff := float64(time.Duration(vd.Options.TargetTime)*time.Second) / avg
 
-	//currentDiff, _ := client.Difficulty.Float64()
+	// currentDiff, _ := client.Difficulty.Float64()
 
 	if avg > vd.MaxTargetTime && currentDiff > vd.Options.MinDiff {
 		if vd.Options.X2Mode {

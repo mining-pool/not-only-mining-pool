@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"testing"
+
 	"github.com/mining-pool/not-only-mining-pool/config"
 	"github.com/mining-pool/not-only-mining-pool/daemonManager"
 	"github.com/mining-pool/not-only-mining-pool/utils"
-	"testing"
 )
 
 func TestCreateGeneration(t *testing.T) {

@@ -2,8 +2,9 @@ package config
 
 import (
 	"crypto/tls"
-	"github.com/go-redis/redis/v7"
 	"strconv"
+
+	"github.com/go-redis/redis/v7"
 )
 
 type RedisOptions struct {

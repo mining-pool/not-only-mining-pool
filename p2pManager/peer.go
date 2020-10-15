@@ -5,12 +5,13 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
-	logging "github.com/ipfs/go-log"
-	"github.com/mining-pool/not-only-mining-pool/config"
-	"github.com/mining-pool/not-only-mining-pool/utils"
 	"io"
 	"net"
 	"time"
+
+	logging "github.com/ipfs/go-log/v2"
+	"github.com/mining-pool/not-only-mining-pool/config"
+	"github.com/mining-pool/not-only-mining-pool/utils"
 )
 
 var log = logging.Logger("p2pMgr")
@@ -42,7 +43,7 @@ func NewPeer(protocolVersion int, options *config.P2POptions) *Peer {
 		log.Fatal("magic hex string is incorrect")
 	}
 
-	networkServices, _ := hex.DecodeString("0100000000000000") //NODE_NETWORK services (value 1 packed as uint64)
+	networkServices, _ := hex.DecodeString("0100000000000000") // NODE_NETWORK services (value 1 packed as uint64)
 	emptyNetAddress, _ := hex.DecodeString("010000000000000000000000000000000000ffff000000000000")
 	userAgent := utils.VarStringBytes("/node-stratum/")
 	blockStartHeight, _ := hex.DecodeString("00000000") // block start_height, can be empty
@@ -134,7 +135,6 @@ func (p *Peer) SetupMessageParser() {
 			}
 		}
 	}()
-
 }
 
 func (p *Peer) HandleMessage(command, payload []byte) {
@@ -154,9 +154,9 @@ func (p *Peer) HandleMessage(command, payload []byte) {
 	}
 }
 
-//Parsing inv message https://en.bitcoin.it/wiki/Protocol_specification#inv
+// Parsing inv message https://en.bitcoin.it/wiki/Protocol_specification#inv
 func (p *Peer) HandleInv(payload []byte) {
-	//sloppy varint decoding
+	// sloppy varint decoding
 	var count int
 	var buf []byte
 	if payload[0] < 0xFD {
@@ -171,7 +171,7 @@ func (p *Peer) HandleInv(payload []byte) {
 		switch binary.LittleEndian.Uint32(buf) {
 		case p.InvCodes["error"]:
 		case p.InvCodes["tx"]:
-			//tx := hex.EncodeToString(buf[4:36])
+			// tx := hex.EncodeToString(buf[4:36])
 		case p.InvCodes["block"]:
 			block := hex.EncodeToString(buf[4:36])
 			log.Warn("block found: ", block)
@@ -211,10 +211,10 @@ func (p *Peer) SendVersion() {
 		utils.PackUint32LE(uint32(p.ProtocolVersion)),
 		p.NetworkServices,
 		utils.PackUint64LE(uint64(time.Now().Unix())),
-		p.EmptyNetAddress, //addr_recv, can be empty
+		p.EmptyNetAddress, // addr_recv, can be empty
 
-		p.EmptyNetAddress, //addr_from, can be empty
-		nonce,             //nonce, random unique ID
+		p.EmptyNetAddress, // addr_from, can be empty
+		nonce,             // nonce, random unique ID
 		p.UserAgent,
 		p.BlockStartHeight,
 
@@ -226,7 +226,7 @@ func (p *Peer) SendVersion() {
 
 func (p *Peer) ProcessBlockNotify(blockHash string) {
 	log.Info("Block notification via p2p")
-	//if p.JobManager.CurrentJob != nil && blockHash != p.JobManager.CurrentJob.GetBlockTemplate.PreviousBlockHash {
+	// if p.JobManager.CurrentJob != nil && blockHash != p.JobManager.CurrentJob.GetBlockTemplate.PreviousBlockHash {
 	p.BlockNotifyCh <- blockHash
 	//}
 }

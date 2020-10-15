@@ -1,13 +1,14 @@
 package storage
 
 import (
-	"github.com/go-redis/redis/v7"
-	logging "github.com/ipfs/go-log"
-	"github.com/mining-pool/not-only-mining-pool/config"
-	"github.com/mining-pool/not-only-mining-pool/types"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-redis/redis/v7"
+	logging "github.com/ipfs/go-log/v2"
+	"github.com/mining-pool/not-only-mining-pool/config"
+	"github.com/mining-pool/not-only-mining-pool/types"
 )
 
 var log = logging.Logger("storage")
@@ -90,12 +91,11 @@ func (s *DB) PutPendingBlockHash(blockHash string) {
 
 // TODO
 func (s *DB) GetShares() []*types.Share {
-	//s.Client.Z
+	// s.Client.Z
 	return nil
 }
 
 func (s *DB) GetStats() {
-
 }
 
 //             ["scard", ":blocksPending"],

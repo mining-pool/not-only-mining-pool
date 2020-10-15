@@ -2,8 +2,9 @@ package algorithm
 
 import (
 	"encoding/hex"
-	"github.com/mining-pool/not-only-mining-pool/utils"
 	"testing"
+
+	"github.com/mining-pool/not-only-mining-pool/utils"
 )
 
 func TestHash(t *testing.T) {

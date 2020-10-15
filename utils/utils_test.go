@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/maoxs2/go-bech32"
 	"reflect"
 	"testing"
+
+	"github.com/c0mm4nd/go-bech32"
 )
 
 func TestSerializeNumber(t *testing.T) {
@@ -113,7 +114,7 @@ func TestP2WSHAddressToScript(t *testing.T) {
 	witnessProgram, _ := bech32.ConvertBits(decoded[1:], 5, 8, true)
 
 	t.Log(len(decoded))
-	//publicKey := decoded[1:len(decoded)]
+	// publicKey := decoded[1:len(decoded)]
 
 	t.Log(hex.EncodeToString(witnessProgram))
 }

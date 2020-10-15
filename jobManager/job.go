@@ -110,7 +110,7 @@ func (j *Job) SerializeCoinbase(extraNonce1, extraNonce2 []byte) []byte {
 }
 
 func (j *Job) SerializeBlock(header, coinbase []byte) []byte {
-	//POS coins require a zero byte appended to block which the daemon replaces with the signature
+	// POS coins require a zero byte appended to block which the daemon replaces with the signature
 	var suffix []byte
 	if j.Reward == "POS" {
 		suffix = []byte{0}
@@ -148,17 +148,17 @@ func (j *Job) SerializeHeader(merkleRoot, nTime, nonce []byte) []byte {
 	prevHash, _ := hex.DecodeString(j.GetBlockTemplate.PreviousBlockHash)
 
 	pos := 0
-	copy(header[pos:], nonce) //4
+	copy(header[pos:], nonce) // 4
 	pos += len(nonce)
-	copy(header[pos:], bits) //4
+	copy(header[pos:], bits) // 4
 	pos += len(bits)
-	copy(header[pos:], nTime) //4
+	copy(header[pos:], nTime) // 4
 	pos += len(nTime)
-	copy(header[pos:], merkleRoot) //32
+	copy(header[pos:], merkleRoot) // 32
 	pos += len(merkleRoot)
-	copy(header[pos:], prevHash) //32
+	copy(header[pos:], prevHash) // 32
 	pos += len(prevHash)
-	binary.BigEndian.PutUint32(header[pos:], uint32(j.GetBlockTemplate.Version)) //4
+	binary.BigEndian.PutUint32(header[pos:], uint32(j.GetBlockTemplate.Version)) // 4
 	pos += 4
 
 	return utils.ReverseBytes(header)

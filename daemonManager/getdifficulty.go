@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-//type GetDifficulty interface {}
+// type GetDifficulty interface {}
 
 func BytesToGetDifficulty(b []byte) interface{} {
 	var getDifficulty interface{}

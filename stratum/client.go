@@ -6,12 +6,13 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
-	"github.com/mining-pool/not-only-mining-pool/types"
 	"io"
 	"math/big"
 	"net"
 	"strconv"
 	"time"
+
+	"github.com/mining-pool/not-only-mining-pool/types"
 
 	"github.com/mining-pool/not-only-mining-pool/banningManager"
 	"github.com/mining-pool/not-only-mining-pool/config"
@@ -88,7 +89,7 @@ func (sc *Client) ShouldBan(shareValid bool) bool {
 			if sc.Shares.BadPercent() < sc.Options.Banning.InvalidPercent {
 				sc.Shares.Reset()
 			} else {
-				//sc.TriggerBanEvent <- strconv.FormatUint(sc.Shares.Invalid, 10) + " out of the last " + strconv.FormatUint(sc.Shares.TotalShares(), 10) + " shares were invalid"
+				// sc.TriggerBanEvent <- strconv.FormatUint(sc.Shares.Invalid, 10) + " out of the last " + strconv.FormatUint(sc.Shares.TotalShares(), 10) + " shares were invalid"
 				log.Info(strconv.FormatUint(sc.Shares.Invalid, 10) + " out of the last " + strconv.FormatUint(sc.Shares.TotalShares(), 10) + " shares were invalid")
 				sc.BanningManager.AddBannedIP(sc.RemoteAddress.String())
 				log.Warn("closed socket", sc.WorkerName, " due to shares bad percent reached the banning invalid percent threshold")
@@ -282,7 +283,7 @@ func (sc *Client) HandleSubmit(message *daemonManager.JsonRpcRequest) {
 		ok := sc.SendDifficulty(diff)
 		sc.PendingDifficulty = nil
 		if ok {
-			//difficultyChanged
+			// difficultyChanged
 			// -> difficultyUpdate client.workerName, diff
 			displayDiff, _ := diff.Float64()
 			log.Info("Difficulty update to diff:", displayDiff, "&workerName:", sc.WorkerName)
@@ -334,7 +335,6 @@ func (sc *Client) SendJsonRPC(jsonRPCs daemonManager.JsonRpc) {
 }
 
 func (sc *Client) SendSubscriptionFirstResponse() {
-
 }
 
 func (sc *Client) SetupSocket() {
@@ -375,7 +375,7 @@ func (sc *Client) SetupSocket() {
 				}
 
 				if len(raw) > 10240 {
-					//socketFlooded
+					// socketFlooded
 					log.Warn("Flooding message from", sc.GetLabel(), ":", string(raw))
 					_ = sc.Socket.Close()
 					sc.SocketClosedEvent <- struct{}{}
@@ -472,7 +472,7 @@ func (sc *Client) SendMiningJob(jobParams []interface{}) {
 		ok := sc.SendDifficulty(diff)
 		sc.PendingDifficulty = nil
 		if ok {
-			//difficultyChanged
+			// difficultyChanged
 			// -> difficultyUpdate client.workerName, diff
 			displayDiff, _ := diff.Float64()
 			log.Info("Difficulty update to diff:", displayDiff, "&workerName:", sc.WorkerName)

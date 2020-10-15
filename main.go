@@ -3,19 +3,22 @@ package main
 import (
 	"encoding/json"
 	"flag"
-	logging "github.com/ipfs/go-log"
+	"os"
+
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/mining-pool/not-only-mining-pool/config"
 	"github.com/mining-pool/not-only-mining-pool/poolManager"
 	"github.com/mining-pool/not-only-mining-pool/utils"
-	"os"
 )
 
 var log = logging.Logger("main")
 
 const defaultConfigFileName = "config.json"
 
-var configFileName = flag.String("c", defaultConfigFileName, "configuration file for pool")
-var logLevel = flag.String("l", "info", "log level")
+var (
+	configFileName = flag.String("c", defaultConfigFileName, "configuration file for pool")
+	logLevel       = flag.String("l", "info", "log level")
+)
 
 func main() {
 	flag.Parse()

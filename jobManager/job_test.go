@@ -4,12 +4,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
+	"testing"
+
 	"github.com/mining-pool/not-only-mining-pool/algorithm"
 	"github.com/mining-pool/not-only-mining-pool/daemonManager"
 	"github.com/mining-pool/not-only-mining-pool/merkletree"
 	"github.com/mining-pool/not-only-mining-pool/utils"
-	"math/big"
-	"testing"
 )
 
 func TestNewBlockTemplate(t *testing.T) {
@@ -161,15 +162,15 @@ func TestJob_SerializeHeader(t *testing.T) {
 	//for i:=0; i<len(txsBytes); i++ {
 	//	t.Log(hex.EncodeToString(txsBytes[i]))
 	//}
-	var mt = merkletree.NewMerkleTree(txsBytes)
+	mt := merkletree.NewMerkleTree(txsBytes)
 	for i := 0; i < len(mt.Steps); i++ {
 		t.Log(hex.EncodeToString(mt.Steps[i]))
 	}
 
-	//var merkleBranch = GetMerkleHashes(mt.Steps)
+	// var merkleBranch = GetMerkleHashes(mt.Steps)
 
-	//extraNonce1 := make([]byte, 4)
-	//extraNonce2 := make([]byte, 4)
+	// extraNonce1 := make([]byte, 4)
+	// extraNonce2 := make([]byte, 4)
 
 	coinbaseBytes, _ := hex.DecodeString("01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff1f03960b150443434d5e08672a68dc080000000c2f627920436f6d6d616e642f00000000020000000000000000266a24aa21a9eda9cde9bc89d87cf1d26a817c8f9a6b9075d6a86046bf19b8fdff0bdee22419c9385c0395000000001976a91424da8749fde8fcdcde60ba1c5afea8d2bd4a4f2688ac00000000")
 
@@ -177,5 +178,4 @@ func TestJob_SerializeHeader(t *testing.T) {
 	t.Log(hex.EncodeToString(coinbaseHash))
 	merkleRoot := utils.ReverseBytes(mt.WithFirst(coinbaseHash))
 	t.Log(hex.EncodeToString(merkleRoot))
-
 }

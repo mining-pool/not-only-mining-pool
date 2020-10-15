@@ -2,11 +2,12 @@ package api
 
 import (
 	"encoding/json"
+	"net/http"
+
 	"github.com/gorilla/mux"
-	logging "github.com/ipfs/go-log"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/mining-pool/not-only-mining-pool/config"
 	"github.com/mining-pool/not-only-mining-pool/storage"
-	"net/http"
 )
 
 var log = logging.Logger("api")
@@ -44,8 +45,8 @@ func NewAPIServer(options *config.Options, storage *storage.DB) *Server {
 	s.RegisterFunc("/config/{key}", s.configFunc)
 
 	s.RegisterFunc("/miner", s.minerIndexFunc)
-	//s.RegisterFunc("/miner/{miner}", s.minerFunc)
-	//s.RegisterFunc("/miner/{miner}/{rig}", s.minerRigFunc)
+	// s.RegisterFunc("/miner/{miner}", s.minerFunc)
+	// s.RegisterFunc("/miner/{miner}/{rig}", s.minerRigFunc)
 	s.Use(mux.CORSMethodMiddleware(s.Router))
 
 	http.Handle("/", s)
@@ -77,7 +78,6 @@ func (s *Server) indexFunc(writer http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) poolFunc(writer http.ResponseWriter, request *http.Request) {
-
 }
 
 func (s *Server) configIndexFunc(writer http.ResponseWriter, _ *http.Request) {
@@ -98,5 +98,4 @@ func (s *Server) configFunc(writer http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) minerIndexFunc(writer http.ResponseWriter, r *http.Request) {
-
 }

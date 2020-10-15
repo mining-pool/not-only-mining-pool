@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/binary"
-	logging "github.com/ipfs/go-log"
 	"net"
 	"strconv"
 	"time"
+
+	logging "github.com/ipfs/go-log/v2"
 
 	"github.com/mining-pool/not-only-mining-pool/banningManager"
 	"github.com/mining-pool/not-only-mining-pool/config"

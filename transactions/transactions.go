@@ -3,12 +3,13 @@ package transactions
 import (
 	"bytes"
 	"encoding/hex"
-	logging "github.com/ipfs/go-log"
+	"math"
+	"time"
+
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/mining-pool/not-only-mining-pool/config"
 	"github.com/mining-pool/not-only-mining-pool/daemonManager"
 	"github.com/mining-pool/not-only-mining-pool/utils"
-	"math"
-	"time"
 )
 
 var log = logging.Logger("tx")
@@ -127,7 +128,7 @@ func GenerateOutputTransactions(poolRecipient []byte, recipients []*config.Recip
 func CreateGeneration(rpcData *daemonManager.GetBlockTemplate, publicKey, extraNoncePlaceholder []byte, reward string, txMessages bool, recipients []*config.Recipient) [][]byte {
 	var txVersion int
 	var txComment []byte
-	var txType = 0
+	txType := 0
 	var txExtraPayload []byte
 	if txMessages {
 		txVersion = 2
@@ -172,7 +173,7 @@ func CreateGeneration(rpcData *daemonManager.GetBlockTemplate, publicKey, extraN
 		utils.PackUint32LE(uint32(txVersion)),
 		txTimestamp,
 
-		//transaction input
+		// transaction input
 		utils.VarIntBytes(1), // only one txIn
 		utils.Uint256BytesFromHash(txInPrevOutHash),
 		utils.PackUint32LE(uint32(txInPrevOutIndex)),
@@ -185,11 +186,11 @@ func CreateGeneration(rpcData *daemonManager.GetBlockTemplate, publicKey, extraN
 	p2 := bytes.Join([][]byte{
 		scriptSigPart2,
 		utils.PackUint32LE(uint32(txInSequence)),
-		//end transaction input
+		// end transaction input
 
-		//transaction output
+		// transaction output
 		outputTransactions,
-		//end transaction ouput
+		// end transaction ouput
 
 		utils.PackUint32LE(uint32(txLockTime)),
 		txComment,

@@ -1,8 +1,9 @@
 package config
 
 import (
-	"github.com/mining-pool/not-only-mining-pool/utils"
 	"strings"
+
+	"github.com/mining-pool/not-only-mining-pool/utils"
 )
 
 type Recipient struct {

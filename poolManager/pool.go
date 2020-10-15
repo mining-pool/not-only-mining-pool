@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	logging "github.com/ipfs/go-log"
 	"reflect"
 	"strconv"
 	"strings"
 	"time"
+
+	logging "github.com/ipfs/go-log/v2"
 
 	"github.com/mining-pool/not-only-mining-pool/api"
 	"github.com/mining-pool/not-only-mining-pool/banningManager"
@@ -217,7 +218,7 @@ func (p *Pool) DetectCoinData() {
 
 		p.Options.Coin.Testnet = getInfo.Testnet
 		p.ProtocolVersion = getInfo.Protocolversion
-		//diff = getInfo.Difficulty
+		// diff = getInfo.Difficulty
 
 		p.Stats.Connections = getInfo.Connections
 	} else {
@@ -236,7 +237,7 @@ func (p *Pool) DetectCoinData() {
 		getBlockchainInfo := daemonManager.BytesToGetBlockchainInfo(rpcResponse.Result)
 		p.Options.Coin.Testnet = strings.Contains(getBlockchainInfo.Chain, "test")
 		p.ProtocolVersion = getNetworkInfo.Protocolversion
-		//diff = getBlockchainInfo.Difficulty
+		// diff = getBlockchainInfo.Difficulty
 
 		p.Stats.Connections = getNetworkInfo.Connections
 	}
