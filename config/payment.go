@@ -20,7 +20,7 @@ func (r *Recipient) GetScript() []byte {
 		case "p2sh":
 			r.script = utils.P2SHAddressToScript(r.Address)
 		case "p2pkh":
-			r.script = utils.P2SHAddressToScript(r.Address)
+			r.script = utils.P2PKHAddressToScript(r.Address)
 		case "p2wsh":
 			r.script = utils.P2WSHAddressToScript(r.Address)
 		case "pk", "publickey":
