@@ -2,7 +2,7 @@
 
 BitcoinCore(bitcoind)-variants' pool written in golang
 
-## Difference from NOMP(node-node-open-mining-portal)
+## Difference from NOMP(node-open-mining-portal)
 
 This pool software is not a portal, but a standalone stratum server with high performance.
 
@@ -55,8 +55,7 @@ or
 
 ## TODO
 
-- Main
-- API
+- API(half done)
 - More algorithms
 - Web page
 - ...
