@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strconv"
@@ -17,6 +18,7 @@ var log = logging.Logger("daemonMgr")
 
 type DaemonManager struct {
 	Daemons []*config.DaemonOptions
+	clients map[string]*http.Client
 	Coin    *config.CoinOptions
 }
 
@@ -25,9 +27,21 @@ func NewDaemonManager(daemons []*config.DaemonOptions, coin *config.CoinOptions)
 		log.Fatal("new daemon with empty options!")
 	}
 
+	clients := make(map[string]*http.Client)
+	for _, daemon := range daemons {
+		transport := &http.Transport{}
+		if daemon.TLS != nil {
+			transport.TLSClientConfig = daemon.TLS.ToTLSConfig()
+		}
+
+		client := &http.Client{Transport: transport}
+		clients[daemon.String()] = client
+	}
+
 	return &DaemonManager{
 		Daemons: daemons,
 		Coin:    coin,
+		clients: clients,
 	}
 }
 
@@ -62,12 +76,7 @@ func (dm *DaemonManager) IsAllOnline() bool {
 }
 
 func (dm *DaemonManager) DoHttpRequest(daemon *config.DaemonOptions, reqRawData []byte) (*http.Response, error) {
-	var transport *http.Transport
-	if daemon.TLS != nil {
-		transport = &http.Transport{
-			TLSClientConfig: daemon.TLS.ToTLSConfig(),
-		}
-	}
+	client := dm.clients[daemon.String()]
 
 	req, err := http.NewRequest("POST", daemon.URL(), bytes.NewReader(reqRawData))
 	if err != nil {
@@ -76,7 +85,7 @@ func (dm *DaemonManager) DoHttpRequest(daemon *config.DaemonOptions, reqRawData 
 	if daemon.User != "" {
 		req.SetBasicAuth(daemon.User, daemon.Password)
 	}
-	client := &http.Client{Transport: transport}
+
 	return client.Do(req)
 }
 
@@ -121,6 +130,7 @@ func (dm *DaemonManager) CmdAll(method string, params []interface{}) ([]*http.Re
 			log.Fatal(err)
 		}
 
+		fmt.Println(string(reqRawData))
 		res, err := dm.DoHttpRequest(daemon, reqRawData)
 		if err != nil {
 			log.Fatal(err)
@@ -140,7 +150,7 @@ func (dm *DaemonManager) CmdAll(method string, params []interface{}) ([]*http.Re
 
 		err = json.Unmarshal(raw, &result)
 		if err != nil {
-			log.Panic("failed to unmarshal response body:", raw)
+			log.Panicf("failed to unmarshal response body: %s", raw)
 		}
 		results = append(results, &result)
 	}

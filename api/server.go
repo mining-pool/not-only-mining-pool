@@ -69,7 +69,12 @@ func (s *Server) RegisterFunc(path string, fn func(http.ResponseWriter, *http.Re
 func (s *Server) Serve() {
 	addr := s.apiConf.Addr()
 	log.Warn("API server listening on ", addr)
-	go http.ListenAndServe(addr, nil)
+	go func() {
+		err := http.ListenAndServe(addr, nil)
+		if err != nil {
+			panic(err)
+		}
+	}()
 }
 
 func (s *Server) indexFunc(writer http.ResponseWriter, _ *http.Request) {
@@ -78,6 +83,7 @@ func (s *Server) indexFunc(writer http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) poolFunc(writer http.ResponseWriter, request *http.Request) {
+	// TODO
 }
 
 func (s *Server) configIndexFunc(writer http.ResponseWriter, _ *http.Request) {
@@ -98,4 +104,5 @@ func (s *Server) configFunc(writer http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) minerIndexFunc(writer http.ResponseWriter, r *http.Request) {
+	// TODO
 }

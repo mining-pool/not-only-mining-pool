@@ -1,0 +1,65 @@
+{
+  "disablePayment": true,
+  "coin": {
+    "name": "Bitcoin",
+    "symbol": "BTC"
+  },
+  "algorithm": {
+    "name": "sha256d",
+    "multiplier": 0,
+    "sha256dBlockHasher": true
+  },
+  "poolAddress": {
+    "address": "bc1qlr36tpdwctfndcdgzx5ukjkqazl5hclkurw08q",
+    "type": "p2wsh"
+  },
+  "rewardRecipients": [
+    {
+      "address": "bc1qlr36tpdwctfndcdgzx5ukjkqazl5hclkurw08q",
+      "type": "p2wsh",
+      "percent": 0.01
+    }
+  ],
+  "blockRefreshInterval": 10,
+  "jobRebroadcastTimeout": 55,
+  "connectionTimeout": 600,
+  "emitInvalidBlockHashes": false,
+  "tcpProxyProtocol": false,
+  "banning": {
+    "time": 600,
+    "invalidPercent": 50,
+    "checkThreshold": 500,
+    "purgeInterval": 300
+  },
+  "ports": {
+    "3032": {
+      "diff": 1,
+      "varDiff": {
+        "minDiff": 1,
+        "maxDiff": 100000,
+        "targetTime": 15,
+        "retargetTime": 90,
+        "variancePercent": 30
+      }
+    }
+  },
+  "daemons": [
+    {
+      "host": "127.0.0.1",
+      "port": 18334,
+      "user": "bitcoinrpc",
+      "password": "testnet",
+      "tls":{}
+    }
+  ],
+  "api": {
+    "host": "0.0.0.0",
+    "port": 20000
+  },
+  "storage": {
+    "network": "tcp",
+    "host": "127.0.0.1",
+    "port": 6379,
+    "tls": null
+  }
+}

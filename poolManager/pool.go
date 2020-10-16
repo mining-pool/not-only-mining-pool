@@ -56,27 +56,31 @@ func NewPool(options *config.Options) *Pool {
 		}
 	}
 
-	_, getBalance, _ := dm.Cmd("getbalance", []interface{}{})
+	var magnitude int64 = 100000000 //sat
+	if !options.DisablePayment {
+		_, getBalance, _ := dm.Cmd("getbalance", []interface{}{})
 
-	if getBalance.Error != nil {
-		log.Fatal(errors.New(fmt.Sprint(getBalance.Error)))
+		if getBalance.Error != nil {
+			log.Fatal(errors.New(fmt.Sprint(getBalance.Error)))
+		}
+
+		split0 := bytes.Split(utils.Jsonify(getBalance), []byte(`result":`))
+		split2 := bytes.Split(split0[1], []byte(","))
+		split3 := bytes.Split(split2[0], []byte("."))
+		d := split3[1]
+
+		var err error
+		magnitude, err = strconv.ParseInt("10"+strconv.Itoa(len(d))+"0", 10, 64)
+		if err != nil {
+			log.Fatal("ErrorCode detecting number of satoshis in a coin, cannot do payment processing. Tried parsing: ", string(utils.Jsonify(getBalance)))
+		}
 	}
 
-	split0 := bytes.Split(utils.Jsonify(getBalance), []byte(`result":`))
-	split2 := bytes.Split(split0[1], []byte(","))
-	split3 := bytes.Split(split2[0], []byte("."))
-	d := split3[1]
+	db := storage.NewStorage(options.Coin.Name, options.Storage)
 
-	magnitude, err := strconv.ParseInt("10"+strconv.Itoa(len(d))+"0", 10, 64)
-	if err != nil {
-		log.Fatal("ErrorCode detecting number of satoshis in a coin, cannot do payment processing. Tried parsing: ", string(utils.Jsonify(getBalance)))
-	}
-
-	storage := storage.NewStorage(options.Coin.Name, options.Storage)
-
-	jm := jobManager.NewJobManager(options, dm, storage)
+	jm := jobManager.NewJobManager(options, dm, db)
 	bm := banningManager.NewBanningManager(options.Banning)
-	s := api.NewAPIServer(options, storage)
+	s := api.NewAPIServer(options, db)
 
 	return &Pool{
 		Options:       options,

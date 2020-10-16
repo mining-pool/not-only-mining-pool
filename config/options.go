@@ -5,7 +5,8 @@ import logging "github.com/ipfs/go-log/v2"
 var log = logging.Logger("config")
 
 type Options struct {
-	Coin *CoinOptions `json:"coin"`
+	DisablePayment bool         `json:"disablePayment"`
+	Coin           *CoinOptions `json:"coin"`
 
 	PoolAddress      *Recipient   `json:"poolAddress"`
 	RewardRecipients []*Recipient `json:"rewardRecipients"`
