@@ -403,10 +403,13 @@ func CoinsToSatoshis(coins float64, magnitude int, coinPrecision int) uint64 {
 
 func GetReadableHashRateString(hashrate float64) string {
 	i := 0
-	byteUnits := []string{" H", " KH", " MH", " GH", " TH", " PH"}
+	byteUnits := []string{" H", " KH", " MH", " GH", " TH", " PH", " EH"}
 	for hashrate > 1024 {
-		hashrate = hashrate / 1024
 		i++
+		hashrate = hashrate / 1024
+		if i+1 == len(byteUnits) {
+			break
+		}
 	}
 
 	return strconv.FormatFloat(hashrate, 'f', 7, 64) + byteUnits[i]
