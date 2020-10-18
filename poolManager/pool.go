@@ -97,10 +97,7 @@ func NewPool(options *config.Options) *Pool {
 
 //
 func (p *Pool) Init() {
-	if !p.CheckAllSynced() {
-		log.Fatal("Not synced!")
-	}
-
+	p.CheckAllReady()
 	p.DetectCoinData()
 
 	initGBT, err := p.DaemonManager.GetBlockTemplate()
@@ -279,17 +276,13 @@ func (p *Pool) OutputPoolInfo() {
 	fmt.Println(strings.Join(infoLines, "\n\t"))
 }
 
-func (p *Pool) CheckAllSynced() bool {
-	hasOneNotSynced := false
+func (p *Pool) CheckAllReady() {
 	_, results := p.DaemonManager.CmdAll("getblocktemplate", []interface{}{map[string]interface{}{"capabilities": []string{"coinbasetxn", "workid", "coinbase/append"}, "rules": []string{"segwit"}}})
 	for i := range results {
 		if results[i].Error != nil {
-			hasOneNotSynced = true
+			log.Fatalf("daemon %s is not ready for mining: %s", p.DaemonManager.Daemons[i], results[i].Error.Message)
 		}
 	}
-
-	isAllSynced := !hasOneNotSynced
-	return isAllSynced
 }
 
 func (p *Pool) SetupBlockPolling() {

@@ -186,7 +186,7 @@ func (dm *DaemonManager) CheckStatusCode(statusCode int) error {
 }
 
 func (dm *DaemonManager) Cmd(method string, params []interface{}) (*config.DaemonOptions, *JsonRpcResponse, *http.Response) {
-	for i := range dm.Daemons {
+	for i := 0; i < len(dm.Daemons); i++ {
 		reqRawData, err := json.Marshal(map[string]interface{}{
 			"id":     utils.RandPositiveInt64(),
 			"method": method,
@@ -218,5 +218,6 @@ func (dm *DaemonManager) Cmd(method string, params []interface{}) (*config.Daemo
 		return dm.Daemons[i], &result, res
 	}
 
+	log.Error("failed getting GBT from all daemons!")
 	return nil, nil, nil
 }
