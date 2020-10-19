@@ -279,6 +279,10 @@ func (p *Pool) OutputPoolInfo() {
 func (p *Pool) CheckAllReady() {
 	_, results := p.DaemonManager.CmdAll("getblocktemplate", []interface{}{map[string]interface{}{"capabilities": []string{"coinbasetxn", "workid", "coinbase/append"}, "rules": []string{"segwit"}}})
 	for i := range results {
+		if results[i] == nil {
+			log.Fatalf("daemon %s is not available", p.DaemonManager.Daemons[i])
+		}
+
 		if results[i].Error != nil {
 			log.Fatalf("daemon %s is not ready for mining: %s", p.DaemonManager.Daemons[i], results[i].Error.Message)
 		}

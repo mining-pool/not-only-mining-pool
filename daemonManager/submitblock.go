@@ -16,6 +16,11 @@ func (dm *DaemonManager) SubmitBlock(blockHex string) {
 	}
 
 	for i := range results {
+		if results[i] == nil {
+			log.Errorf("failed submitting to daemon %s, see log above for details", dm.Daemons[i].String())
+			continue
+		}
+
 		if results[i].Error != nil {
 			log.Error("rpc error with daemon when submitting block: " + string(utils.Jsonify(results[i].Error)))
 		} else {

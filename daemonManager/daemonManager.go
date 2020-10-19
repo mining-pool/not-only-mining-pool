@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strconv"
@@ -52,8 +51,8 @@ func (dm *DaemonManager) Check() {
 }
 
 func (dm *DaemonManager) IsAllOnline() bool {
-	results, _ := dm.CmdAll("getpeerinfo", []interface{}{})
-	for _, res := range results {
+	responses, _ := dm.CmdAll("getpeerinfo", []interface{}{})
+	for _, res := range responses {
 		if res.StatusCode/100 != 2 {
 			return false
 		}
@@ -117,29 +116,37 @@ func (dm *DaemonManager) BatchCmd(commands []interface{}) (*config.DaemonOptions
 	return nil, nil, nil
 }
 
-func (dm *DaemonManager) CmdAll(method string, params []interface{}) ([]*http.Response, []*JsonRpcResponse) {
-	responses := make([]*http.Response, 0)
-	results := make([]*JsonRpcResponse, 0)
-	for _, daemon := range dm.Daemons {
-		reqRawData, err := json.Marshal(map[string]interface{}{
+// CmdAll sends the rpc call to all daemon, and never break because of any error.
+// So the elem in responses may be nil
+func (dm *DaemonManager) CmdAll(method string, params []interface{}) (responses []*http.Response, results []*JsonRpcResponse) {
+	responses = make([]*http.Response, len(dm.Daemons))
+	results = make([]*JsonRpcResponse, len(dm.Daemons))
+
+	for i, daemon := range dm.Daemons {
+		msg := map[string]interface{}{
 			"id":     utils.RandPositiveInt64(),
 			"method": method,
 			"params": params,
-		})
-		if err != nil {
-			log.Fatal(err)
 		}
 
-		fmt.Println(string(reqRawData))
+		reqRawData, err := json.Marshal(msg)
+		if err != nil {
+			log.Errorf("failed marshaling %v: %s", msg, err)
+			continue
+		}
+
+		log.Debug(string(reqRawData))
 		res, err := dm.DoHttpRequest(daemon, reqRawData)
 		if err != nil {
-			log.Fatal(err)
+			log.Errorf("failed on daemon %s: %s", daemon.String(), err)
+			continue
 		}
+
 		//if err := dm.CheckStatusCode(res.StatusCode); err != nil {
 		//	log.Println(err)
 		//}
 
-		responses = append(responses, res)
+		responses[i] = res
 
 		var result JsonRpcResponse
 		raw, err := ioutil.ReadAll(res.Body)
@@ -152,7 +159,8 @@ func (dm *DaemonManager) CmdAll(method string, params []interface{}) ([]*http.Re
 		if err != nil {
 			log.Panicf("failed to unmarshal response body: %s", raw)
 		}
-		results = append(results, &result)
+
+		results[i] = &result
 	}
 
 	return responses, results
@@ -186,7 +194,7 @@ func (dm *DaemonManager) CheckStatusCode(statusCode int) error {
 }
 
 func (dm *DaemonManager) Cmd(method string, params []interface{}) (*config.DaemonOptions, *JsonRpcResponse, *http.Response) {
-	for i := 0; i < len(dm.Daemons); i++ {
+	for i := range dm.Daemons {
 		reqRawData, err := json.Marshal(map[string]interface{}{
 			"id":     utils.RandPositiveInt64(),
 			"method": method,
@@ -200,6 +208,7 @@ func (dm *DaemonManager) Cmd(method string, params []interface{}) (*config.Daemo
 		if err != nil {
 			log.Error(err)
 		}
+
 		//if err := dm.CheckStatusCode(res.StatusCode); err != nil {
 		//	log.Println(err)
 		//}
@@ -215,6 +224,7 @@ func (dm *DaemonManager) Cmd(method string, params []interface{}) (*config.Daemo
 		if err != nil {
 			log.Error(err)
 		}
+
 		return dm.Daemons[i], &result, res
 	}
 

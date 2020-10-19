@@ -250,9 +250,7 @@ func (sc *Client) HandleSubmit(message *daemonManager.JsonRpcRequest) {
 		utils.RawJsonToString(message.Params[0]),
 	)
 
-	if share.ErrorCode == 0 {
-		sc.JobManager.ProcessShare(share)
-	}
+	sc.JobManager.ProcessShare(share)
 
 	if share.ErrorCode == types.ErrLowDiffShare {
 		// warn the miner with current diff

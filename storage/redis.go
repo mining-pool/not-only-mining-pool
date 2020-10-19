@@ -49,11 +49,13 @@ func (s *DB) PutShare(share *types.Share, accepted bool) {
 	ppl.SAdd(ctx, s.coin+":miner:"+share.Miner+":rigs", share.Rig) // rig index
 
 	if share.ErrorCode == 0 {
-		ppl.HIncrByFloat(ctx, s.coin+":miner:contrib", share.Miner, share.Diff)
-		ppl.HIncrBy(ctx, s.coin+":miner:shares:valid", share.Miner, 1)
+		log.Warn("recording valid share")
+		ppl.HIncrByFloat(ctx, s.coin+":pool:contrib", share.Miner, share.Diff)
+		ppl.HIncrBy(ctx, s.coin+":miners:validShares", share.Miner, 1)
 
 		ppl.HIncrBy(ctx, s.coin+":pool", "validShares", 1)
 
+		// cost storage for speed, dont use for range to replace this
 		ppl.ZAdd(ctx, s.coin+":pool:shares", &redis.Z{
 			Score:  float64(now),
 			Member: strDiff,
@@ -70,15 +72,19 @@ func (s *DB) PutShare(share *types.Share, accepted bool) {
 		})
 
 	} else {
-		ppl.HIncrBy(ctx, s.coin+":miner:shares:invalid", share.Miner, 1)
-		ppl.IncrBy(ctx, s.coin+":pool:shares:invalid", 1)
+		log.Warn("recording invalid share")
+		ppl.HIncrBy(ctx, s.coin+":miners:invalidShares", share.Miner, 1)
+
+		ppl.HIncrBy(ctx, s.coin+":pool", "invalidShares", 1)
 	}
 
 	// when mined one => seal roundCount,
 	// BlockHex is not accuracy, maybe out of date
 	if len(share.BlockHex) > 0 {
+		// share is valid but block from share can be also invalid
 		if accepted {
-			ppl.Rename(ctx, s.coin+":shares:round", s.coin+":shares:round:"+strconv.FormatInt(share.BlockHeight, 10))
+			log.Warn("recording valid block")
+			ppl.Rename(ctx, s.coin+":pool:contrib", s.coin+":pool:contrib:"+strconv.FormatInt(share.BlockHeight, 10))
 			ppl.SAdd(ctx, s.coin+":blocks:pending", share.BlockHash)
 			ppl.HSetNX(ctx, s.coin+":blocks", share.BlockHash, strings.Join([]string{
 				share.TxHash,
@@ -89,6 +95,7 @@ func (s *DB) PutShare(share *types.Share, accepted bool) {
 
 			ppl.HIncrBy(ctx, s.coin+":pool", "validBlocks", 1)
 		} else {
+			log.Warn("recording invalid block")
 			ppl.HIncrBy(ctx, s.coin+":pool", "invalidBlocks", 1)
 		}
 	}

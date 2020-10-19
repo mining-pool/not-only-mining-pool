@@ -68,15 +68,16 @@ func (jm *JobManager) Init(gbt *daemonManager.GetBlockTemplate) {
 
 func (jm *JobManager) ProcessShare(share *types.Share) {
 	// isValidBlock
+	var isAccepted bool
+	var tx string
 	if share.BlockHex != "" {
 		log.Info("submitting new Block: ", share.BlockHex)
 		jm.DaemonManager.SubmitBlock(share.BlockHex)
 
-		isAccepted, tx := jm.CheckBlockAccepted(share.BlockHex)
+		isAccepted, tx = jm.CheckBlockAccepted(share.BlockHash)
 		share.TxHash = tx
 		if isAccepted {
-			go jm.Storage.PutShare(share, isAccepted)
-			log.Info("Block ", share.BlockHex, " Accepted! generation tx: ", share.TxHash, ". Wait for pendding!")
+			log.Info("Block ", share.BlockHash, " Accepted! generation tx: ", share.TxHash, ". Wait for pendding!")
 		}
 
 		gbt, err := jm.DaemonManager.GetBlockTemplate()
@@ -84,30 +85,26 @@ func (jm *JobManager) ProcessShare(share *types.Share) {
 			log.Panic("failed fetching GBT: ", err)
 		}
 		jm.ProcessTemplate(gbt)
-		return
-	} else if share.ErrorCode == 0 {
-		// notValidBlock but isValidShare
-		go jm.Storage.PutShare(share, false)
-		return
 	}
+
+	// notValidBlock but isValidShare
+	go jm.Storage.PutShare(share, isAccepted)
+
 }
 
 func (jm *JobManager) CheckBlockAccepted(blockHash string) (isAccepted bool, tx string) {
 	_, results := jm.DaemonManager.CmdAll("getblock", []interface{}{blockHash})
-	if len(results) == 0 {
-		return false, ""
-	}
 
 	isAccepted = true
 	for i := range results {
-		isAccepted = isAccepted && strings.Compare(daemonManager.BytesToGetBlock(results[i].Result).Hash, blockHash) == 0
-	}
-
-	if len(results) == 0 {
-		return false, ""
+		isAccepted = isAccepted && results[i] != nil && results[i].Error == nil
 	}
 
 	for i := range results {
+		if results[i] == nil {
+			continue
+		}
+
 		gb := daemonManager.BytesToGetBlock(results[i].Result)
 		if gb.Tx != nil {
 			return isAccepted, gb.Tx[0]
@@ -117,7 +114,7 @@ func (jm *JobManager) CheckBlockAccepted(blockHash string) (isAccepted bool, tx 
 	return isAccepted, ""
 }
 
-// Update updates the job when mining the same height but tx changes
+// UpdateCurrentJob updates the job when mining the same height but tx changes
 func (jm *JobManager) UpdateCurrentJob(rpcData *daemonManager.GetBlockTemplate) {
 	tmpBlockTemplate := NewJob(
 		jm.CurrentJob.JobId,
