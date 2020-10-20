@@ -1,4 +1,4 @@
-package jobManager
+package jobs
 
 import (
 	"bytes"
@@ -9,14 +9,14 @@ import (
 
 	"github.com/mining-pool/not-only-mining-pool/algorithm"
 	"github.com/mining-pool/not-only-mining-pool/config"
-	"github.com/mining-pool/not-only-mining-pool/daemonManager"
+	"github.com/mining-pool/not-only-mining-pool/daemons"
 	"github.com/mining-pool/not-only-mining-pool/merkletree"
 	"github.com/mining-pool/not-only-mining-pool/transactions"
 	"github.com/mining-pool/not-only-mining-pool/utils"
 )
 
 type Job struct {
-	GetBlockTemplate      *daemonManager.GetBlockTemplate
+	GetBlockTemplate      *daemons.GetBlockTemplate
 	Submits               []string
 	GenerationTransaction [][]byte
 	JobId                 string
@@ -29,7 +29,7 @@ type Job struct {
 	MerkleTree            *merkletree.MerkleTree
 }
 
-func NewJob(jobId string, rpcData *daemonManager.GetBlockTemplate, poolAddressScript, extraNoncePlaceholder []byte, reward string, txMessages bool, recipients []*config.Recipient) *Job {
+func NewJob(jobId string, rpcData *daemons.GetBlockTemplate, poolAddressScript, extraNoncePlaceholder []byte, reward string, txMessages bool, recipients []*config.Recipient) *Job {
 	var bigTarget *big.Int
 
 	if rpcData.Target != "" {
@@ -190,7 +190,7 @@ func (j *Job) GetJobParams(forceUpdate bool) []interface{} {
 	}
 }
 
-func GetTransactionBytes(txs []*daemonManager.TxParams) [][]byte {
+func GetTransactionBytes(txs []*daemons.TxParams) [][]byte {
 	txHashes := make([][]byte, len(txs))
 	for i := 0; i < len(txs); i++ {
 		if txs[i].TxId != "" {

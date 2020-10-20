@@ -1,4 +1,4 @@
-package p2pManager
+package p2p
 
 import (
 	"encoding/json"

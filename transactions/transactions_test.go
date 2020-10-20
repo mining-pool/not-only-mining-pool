@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/mining-pool/not-only-mining-pool/config"
-	"github.com/mining-pool/not-only-mining-pool/daemonManager"
+	"github.com/mining-pool/not-only-mining-pool/daemons"
 	"github.com/mining-pool/not-only-mining-pool/utils"
 )
 
@@ -71,7 +71,7 @@ func TestCreateGeneration(t *testing.T) {
 
 `
 
-	var rpcData daemonManager.GetBlockTemplate
+	var rpcData daemons.GetBlockTemplate
 	_ = json.Unmarshal([]byte(data), &rpcData)
 
 	pk := utils.P2PKHAddressToScript("QPxrDq3sorCk8DWaYX2GeCkxoePhm1asyY")
@@ -155,7 +155,7 @@ func TestGenerateOutputTransactions(t *testing.T) {
 }
 
 `
-	var rpcData daemonManager.GetBlockTemplate
+	var rpcData daemons.GetBlockTemplate
 	json.Unmarshal([]byte(data), &rpcData)
 	t.Log(hex.EncodeToString(GenerateOutputTransactions(publicKey, recipients, &rpcData)))
 }

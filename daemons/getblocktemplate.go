@@ -1,4 +1,4 @@
-package daemonManager
+package daemons
 
 import (
 	"encoding/json"
@@ -64,7 +64,7 @@ type GetBlockTemplate struct {
 	// LongPollURI string `json:"longpolluri,omitempty"`
 	// SubmitOld   *bool  `json:"submitold,omitempty"`
 
-	// Basic poolManager extension from BIP 0023.
+	// Basic pool extension from BIP 0023.
 	Target string `json:"target,omitempty"`
 	// Expires int64  `json:"expires,omitempty"`
 

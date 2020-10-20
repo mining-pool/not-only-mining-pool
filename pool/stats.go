@@ -1,4 +1,4 @@
-package poolManager
+package pool
 
 type Stats struct {
 	Connections     int

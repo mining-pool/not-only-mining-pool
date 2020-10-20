@@ -1,4 +1,4 @@
-package p2pManager
+package p2p
 
 import (
 	"bytes"
@@ -14,12 +14,12 @@ import (
 	"github.com/mining-pool/not-only-mining-pool/utils"
 )
 
-var log = logging.Logger("p2pMgr")
+var log = logging.Logger("p2p")
 
 type Peer struct {
 	Magic []byte
 
-	Verack                bool
+	VerAck                bool
 	ValidConnectionConfig bool
 
 	NetworkServices   []byte
@@ -59,7 +59,7 @@ func NewPeer(protocolVersion int, options *config.P2POptions) *Peer {
 
 	return &Peer{
 		Magic:                 magic,
-		Verack:                false,
+		VerAck:                false,
 		ValidConnectionConfig: true,
 
 		Options:         options,
@@ -143,8 +143,8 @@ func (p *Peer) HandleMessage(command, payload []byte) {
 	case string(p.Commands["inv"]):
 		p.HandleInv(payload)
 	case string(p.Commands["verack"]):
-		if !p.Verack {
-			p.Verack = true
+		if !p.VerAck {
+			p.VerAck = true
 			// connected
 		}
 	case string(p.Commands["version"]):

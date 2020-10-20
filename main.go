@@ -7,7 +7,7 @@ import (
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/mining-pool/not-only-mining-pool/config"
-	"github.com/mining-pool/not-only-mining-pool/poolManager"
+	"github.com/mining-pool/not-only-mining-pool/pool"
 	"github.com/mining-pool/not-only-mining-pool/utils"
 )
 
@@ -44,7 +44,7 @@ func main() {
 		log.Panic(err)
 	}
 
-	p := poolManager.NewPool(&conf)
+	p := pool.NewPool(&conf)
 	p.Init()
 	for {
 		select {}

@@ -21,7 +21,7 @@ type Options struct {
 	Banning   *BanningOptions      `json:"banning"`
 	Ports     map[int]*PortOptions `json:"ports"`
 	Daemons   []*DaemonOptions     `json:"daemons"`
-	P2P       *P2POptions          `json:"p2pManager"`
+	P2P       *P2POptions          `json:"p2p"`
 	Storage   *RedisOptions        `json:"storage"`
 	Algorithm *AlgorithmOptions    `json:"algorithm"`
 }

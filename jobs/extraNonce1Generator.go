@@ -1,4 +1,4 @@
-package jobManager
+package jobs
 
 import "crypto/rand"
 

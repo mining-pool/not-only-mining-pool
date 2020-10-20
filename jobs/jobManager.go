@@ -1,4 +1,4 @@
-package jobManager
+package jobs
 
 import (
 	"encoding/hex"
@@ -11,7 +11,7 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/mining-pool/not-only-mining-pool/algorithm"
 	"github.com/mining-pool/not-only-mining-pool/config"
-	"github.com/mining-pool/not-only-mining-pool/daemonManager"
+	"github.com/mining-pool/not-only-mining-pool/daemons"
 	"github.com/mining-pool/not-only-mining-pool/storage"
 	"github.com/mining-pool/not-only-mining-pool/types"
 	"github.com/mining-pool/not-only-mining-pool/utils"
@@ -38,12 +38,12 @@ type JobManager struct {
 
 	CoinbaseHasher func([]byte) []byte
 
-	DaemonManager *daemonManager.DaemonManager
+	DaemonManager *daemons.DaemonManager
 
 	NewBlockEvent chan *Job
 }
 
-func NewJobManager(options *config.Options, dm *daemonManager.DaemonManager, storage *storage.DB) *JobManager {
+func NewJobManager(options *config.Options, dm *daemons.DaemonManager, storage *storage.DB) *JobManager {
 	placeholder, _ := hex.DecodeString("f000000ff111111f")
 	extraNonce1Generator := NewExtraNonce1Generator()
 
@@ -62,7 +62,7 @@ func NewJobManager(options *config.Options, dm *daemonManager.DaemonManager, sto
 	}
 }
 
-func (jm *JobManager) Init(gbt *daemonManager.GetBlockTemplate) {
+func (jm *JobManager) Init(gbt *daemons.GetBlockTemplate) {
 	jm.ProcessTemplate(gbt)
 }
 
@@ -105,7 +105,7 @@ func (jm *JobManager) CheckBlockAccepted(blockHash string) (isAccepted bool, tx 
 			continue
 		}
 
-		gb := daemonManager.BytesToGetBlock(results[i].Result)
+		gb := daemons.BytesToGetBlock(results[i].Result)
 		if gb.Tx != nil {
 			return isAccepted, gb.Tx[0]
 		}
@@ -115,7 +115,7 @@ func (jm *JobManager) CheckBlockAccepted(blockHash string) (isAccepted bool, tx 
 }
 
 // UpdateCurrentJob updates the job when mining the same height but tx changes
-func (jm *JobManager) UpdateCurrentJob(rpcData *daemonManager.GetBlockTemplate) {
+func (jm *JobManager) UpdateCurrentJob(rpcData *daemons.GetBlockTemplate) {
 	tmpBlockTemplate := NewJob(
 		jm.CurrentJob.JobId,
 		rpcData,
@@ -133,7 +133,7 @@ func (jm *JobManager) UpdateCurrentJob(rpcData *daemonManager.GetBlockTemplate) 
 }
 
 // CreateNewJob creates a new job when mining new height
-func (jm *JobManager) CreateNewJob(rpcData *daemonManager.GetBlockTemplate) {
+func (jm *JobManager) CreateNewJob(rpcData *daemons.GetBlockTemplate) {
 	// creates a new job when mining new height
 
 	tmpBlockTemplate := NewJob(
@@ -153,7 +153,7 @@ func (jm *JobManager) CreateNewJob(rpcData *daemonManager.GetBlockTemplate) {
 }
 
 // ProcessTemplate handles the template
-func (jm *JobManager) ProcessTemplate(rpcData *daemonManager.GetBlockTemplate) {
+func (jm *JobManager) ProcessTemplate(rpcData *daemons.GetBlockTemplate) {
 	if jm.CurrentJob != nil && rpcData.Height < jm.CurrentJob.GetBlockTemplate.Height {
 		return
 	}
@@ -344,7 +344,7 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 	}
 }
 
-//func GetPoolAddressScript(reward string, validateAddress *daemonManager.ValidateAddress) []byte {
+//func GetPoolAddressScript(reward string, validateAddress *daemons.ValidateAddress) []byte {
 //	switch reward {
 //	case "POS":
 //		return utils.PublicKeyToScript(validateAddress.Pubkey)

@@ -1,4 +1,4 @@
-package jobManager
+package jobs
 
 import (
 	"encoding/hex"
@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/mining-pool/not-only-mining-pool/algorithm"
-	"github.com/mining-pool/not-only-mining-pool/daemonManager"
+	"github.com/mining-pool/not-only-mining-pool/daemons"
 	"github.com/mining-pool/not-only-mining-pool/merkletree"
 	"github.com/mining-pool/not-only-mining-pool/utils"
 )
@@ -33,8 +33,8 @@ func TestNewBlockTemplate(t *testing.T) {
 }
 
 func TestGetTransactionBytes(t *testing.T) {
-	//txs := []*daemonManager.TxParams{
-	//	&daemonManager.TxParams{
+	//txs := []*daemons.TxParams{
+	//	&daemons.TxParams{
 	//		Data:    "",
 	//		Hash:    "",
 	//		Depends: nil,
@@ -68,7 +68,7 @@ func TestGetTransactionBytes(t *testing.T) {
     }
   ]
 `
-	var txs []*daemonManager.TxParams
+	var txs []*daemons.TxParams
 	err := json.Unmarshal([]byte(rawTxs), &txs)
 	if err != nil {
 		t.Fatal(err)
@@ -152,7 +152,7 @@ func TestJob_SerializeHeader(t *testing.T) {
       }
     ]
 `
-	var txs []*daemonManager.TxParams
+	var txs []*daemons.TxParams
 	err := json.Unmarshal([]byte(rawTxs), &txs)
 	if err != nil {
 		t.Fatal(err)

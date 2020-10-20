@@ -1,4 +1,4 @@
-package poolManager
+package pool
 
 import (
 	"bytes"
@@ -12,22 +12,22 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 
 	"github.com/mining-pool/not-only-mining-pool/api"
-	"github.com/mining-pool/not-only-mining-pool/banningManager"
+	"github.com/mining-pool/not-only-mining-pool/bans"
 	"github.com/mining-pool/not-only-mining-pool/config"
-	"github.com/mining-pool/not-only-mining-pool/daemonManager"
-	"github.com/mining-pool/not-only-mining-pool/jobManager"
-	"github.com/mining-pool/not-only-mining-pool/p2pManager"
+	"github.com/mining-pool/not-only-mining-pool/daemons"
+	"github.com/mining-pool/not-only-mining-pool/jobs"
+	"github.com/mining-pool/not-only-mining-pool/p2p"
 	"github.com/mining-pool/not-only-mining-pool/storage"
 	"github.com/mining-pool/not-only-mining-pool/stratum"
 	"github.com/mining-pool/not-only-mining-pool/utils"
 )
 
-var log = logging.Logger("poolMgr")
+var log = logging.Logger("pool")
 
 type Pool struct {
-	DaemonManager *daemonManager.DaemonManager
-	JobManager    *jobManager.JobManager
-	P2PManager    *p2pManager.Peer
+	DaemonManager *daemons.DaemonManager
+	JobManager    *jobs.JobManager
+	P2PManager    *p2p.Peer
 
 	StratumServer *stratum.Server
 
@@ -43,7 +43,7 @@ type Pool struct {
 }
 
 func NewPool(options *config.Options) *Pool {
-	dm := daemonManager.NewDaemonManager(options.Daemons, options.Coin)
+	dm := daemons.NewDaemonManager(options.Daemons, options.Coin)
 	dm.Check()
 
 	if options.PoolAddress.GetScript() == nil {
@@ -72,14 +72,14 @@ func NewPool(options *config.Options) *Pool {
 		var err error
 		magnitude, err = strconv.ParseInt("10"+strconv.Itoa(len(d))+"0", 10, 64)
 		if err != nil {
-			log.Fatal("ErrorCode detecting number of satoshis in a coin, cannot do payment processing. Tried parsing: ", string(utils.Jsonify(getBalance)))
+			log.Fatal("ErrorCode detecting number of satoshis in a coin, cannot do payments processing. Tried parsing: ", string(utils.Jsonify(getBalance)))
 		}
 	}
 
 	db := storage.NewStorage(options.Coin.Name, options.Storage)
 
-	jm := jobManager.NewJobManager(options, dm, db)
-	bm := banningManager.NewBanningManager(options.Banning)
+	jm := jobs.NewJobManager(options, dm, db)
+	bm := bans.NewBanningManager(options.Banning)
 	s := api.NewAPIServer(options, db)
 
 	return &Pool{
@@ -121,7 +121,7 @@ func (p *Pool) SetupP2PBlockNotify() {
 		return
 	}
 
-	p.P2PManager = p2pManager.NewPeer(p.ProtocolVersion, p.Options.P2P)
+	p.P2PManager = p2p.NewPeer(p.ProtocolVersion, p.Options.P2P)
 	p.Init()
 
 	go func() {
@@ -166,7 +166,7 @@ func (p *Pool) DetectCoinData() {
 		log.Error("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
 		return
 	}
-	getDifficulty := daemonManager.BytesToGetDifficulty(rpcResponse.Result)
+	getDifficulty := daemons.BytesToGetDifficulty(rpcResponse.Result)
 	switch reflect.ValueOf(getDifficulty).Kind() {
 	case reflect.Float64:
 		diff = getDifficulty.(float64)
@@ -190,7 +190,7 @@ func (p *Pool) DetectCoinData() {
 		log.Error("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
 		return
 	}
-	getMiningInfo := daemonManager.BytesToGetMiningInfo(rpcResponse.Result)
+	getMiningInfo := daemons.BytesToGetMiningInfo(rpcResponse.Result)
 	p.Stats.NetworkHashrate = getMiningInfo.Networkhashps
 
 	_, rpcResponse, _ = p.DaemonManager.Cmd("submitblock", []interface{}{})
@@ -215,7 +215,7 @@ func (p *Pool) DetectCoinData() {
 
 	_, rpcResponse, _ = p.DaemonManager.Cmd("getinfo", []interface{}{})
 	if rpcResponse.Error == nil && rpcResponse != nil {
-		getInfo := daemonManager.BytesToGetInfo(rpcResponse.Result)
+		getInfo := daemons.BytesToGetInfo(rpcResponse.Result)
 
 		p.Options.Coin.Testnet = getInfo.Testnet
 		p.ProtocolVersion = getInfo.Protocolversion
@@ -228,14 +228,14 @@ func (p *Pool) DetectCoinData() {
 			log.Error("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
 			return
 		}
-		getNetworkInfo := daemonManager.BytesToGetNetworkInfo(rpcResponse.Result)
+		getNetworkInfo := daemons.BytesToGetNetworkInfo(rpcResponse.Result)
 
 		_, rpcResponse, _ = p.DaemonManager.Cmd("getblockchaininfo", []interface{}{})
 		if rpcResponse.Error != nil || rpcResponse == nil {
 			log.Error("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
 			return
 		}
-		getBlockchainInfo := daemonManager.BytesToGetBlockchainInfo(rpcResponse.Result)
+		getBlockchainInfo := daemons.BytesToGetBlockchainInfo(rpcResponse.Result)
 		p.Options.Coin.Testnet = strings.Contains(getBlockchainInfo.Chain, "test")
 		p.ProtocolVersion = getNetworkInfo.Protocolversion
 		// diff = getBlockchainInfo.Difficulty

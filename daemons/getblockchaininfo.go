@@ -1,4 +1,4 @@
-package daemonManager
+package daemons
 
 import (
 	"encoding/json"

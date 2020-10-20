@@ -8,7 +8,7 @@ import (
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/mining-pool/not-only-mining-pool/config"
-	"github.com/mining-pool/not-only-mining-pool/daemonManager"
+	"github.com/mining-pool/not-only-mining-pool/daemons"
 	"github.com/mining-pool/not-only-mining-pool/utils"
 )
 
@@ -21,7 +21,7 @@ var log = logging.Logger("tx")
 //	DefaultWitnessCommitment string
 //}
 
-func GenerateOutputTransactions(poolRecipient []byte, recipients []*config.Recipient, rpcData *daemonManager.GetBlockTemplate) []byte {
+func GenerateOutputTransactions(poolRecipient []byte, recipients []*config.Recipient, rpcData *daemons.GetBlockTemplate) []byte {
 	reward := rpcData.CoinbaseValue
 	rewardToPool := reward
 	txOutputBuffers := make([][]byte, 0)
@@ -125,7 +125,7 @@ func GenerateOutputTransactions(poolRecipient []byte, recipients []*config.Recip
 	}, nil)
 }
 
-func CreateGeneration(rpcData *daemonManager.GetBlockTemplate, publicKey, extraNoncePlaceholder []byte, reward string, txMessages bool, recipients []*config.Recipient) [][]byte {
+func CreateGeneration(rpcData *daemons.GetBlockTemplate, publicKey, extraNoncePlaceholder []byte, reward string, txMessages bool, recipients []*config.Recipient) [][]byte {
 	var txVersion int
 	var txComment []byte
 	txType := 0

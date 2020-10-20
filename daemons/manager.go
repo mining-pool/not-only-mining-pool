@@ -1,4 +1,4 @@
-package daemonManager
+package daemons
 
 import (
 	"bytes"
@@ -7,13 +7,14 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strconv"
+	"sync"
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/mining-pool/not-only-mining-pool/config"
 	"github.com/mining-pool/not-only-mining-pool/utils"
 )
 
-var log = logging.Logger("daemonMgr")
+var log = logging.Logger("daemons")
 
 type DaemonManager struct {
 	Daemons []*config.DaemonOptions
@@ -122,46 +123,55 @@ func (dm *DaemonManager) CmdAll(method string, params []interface{}) (responses 
 	responses = make([]*http.Response, len(dm.Daemons))
 	results = make([]*JsonRpcResponse, len(dm.Daemons))
 
-	for i, daemon := range dm.Daemons {
-		msg := map[string]interface{}{
-			"id":     utils.RandPositiveInt64(),
-			"method": method,
-			"params": params,
-		}
-
-		reqRawData, err := json.Marshal(msg)
-		if err != nil {
-			log.Errorf("failed marshaling %v: %s", msg, err)
-			continue
-		}
-
-		log.Debug(string(reqRawData))
-		res, err := dm.DoHttpRequest(daemon, reqRawData)
-		if err != nil {
-			log.Errorf("failed on daemon %s: %s", daemon.String(), err)
-			continue
-		}
-
-		//if err := dm.CheckStatusCode(res.StatusCode); err != nil {
-		//	log.Println(err)
-		//}
-
-		responses[i] = res
-
-		var result JsonRpcResponse
-		raw, err := ioutil.ReadAll(res.Body)
-		if err != nil {
-			log.Error(err)
-		}
-		res.Body = ioutil.NopCloser(bytes.NewBuffer(raw))
-
-		err = json.Unmarshal(raw, &result)
-		if err != nil {
-			log.Panicf("failed to unmarshal response body: %s", raw)
-		}
-
-		results[i] = &result
+	msg := map[string]interface{}{
+		"id":     utils.RandPositiveInt64(),
+		"method": method,
+		"params": params,
 	}
+
+	reqRawData, err := json.Marshal(msg)
+	if err != nil {
+		log.Errorf("failed marshaling %v: %s", msg, err)
+		return // all elem are nil
+	}
+
+	log.Debug(string(reqRawData))
+
+	wg := sync.WaitGroup{}
+	for i := range dm.Daemons {
+		wg.Add(1)
+		go func(i int) {
+			res, err := dm.DoHttpRequest(dm.Daemons[i], reqRawData)
+			if err != nil {
+				log.Errorf("failed on daemon %s: %s", dm.Daemons[i].String(), err)
+				return
+			}
+
+			//if err := dm.CheckStatusCode(res.StatusCode); err != nil {
+			//	log.Println(err)
+			//}
+
+			responses[i] = res
+
+			var result JsonRpcResponse
+			raw, err := ioutil.ReadAll(res.Body)
+			if err != nil {
+				log.Error(err)
+			}
+			res.Body = ioutil.NopCloser(bytes.NewBuffer(raw))
+
+			err = json.Unmarshal(raw, &result)
+			if err != nil {
+				log.Panicf("failed to unmarshal response body: %s", raw)
+			}
+
+			results[i] = &result
+
+			wg.Done()
+		}(i)
+	}
+
+	wg.Wait()
 
 	return responses, results
 }
@@ -193,18 +203,23 @@ func (dm *DaemonManager) CheckStatusCode(statusCode int) error {
 	return errors.New("unknown status code:" + strconv.Itoa(statusCode))
 }
 
+// Cmd will call daemons one by one and return the first answer
+// one by one not all is to try fetching from the same one not random one
 func (dm *DaemonManager) Cmd(method string, params []interface{}) (*config.DaemonOptions, *JsonRpcResponse, *http.Response) {
-	for i := range dm.Daemons {
-		reqRawData, err := json.Marshal(map[string]interface{}{
-			"id":     utils.RandPositiveInt64(),
-			"method": method,
-			"params": params,
-		})
-		if err != nil {
-			log.Error(err)
-		}
+	reqRawData, err := json.Marshal(map[string]interface{}{
+		"id":     utils.RandPositiveInt64(),
+		"method": method,
+		"params": params,
+	})
+	if err != nil {
+		log.Error(err)
+	}
 
-		res, err := dm.DoHttpRequest(dm.Daemons[i], reqRawData)
+	var result JsonRpcResponse
+	var res *http.Response
+	for i := range dm.Daemons {
+		var err error
+		res, err = dm.DoHttpRequest(dm.Daemons[i], reqRawData)
 		if err != nil {
 			log.Error(err)
 		}
@@ -213,7 +228,6 @@ func (dm *DaemonManager) Cmd(method string, params []interface{}) (*config.Daemo
 		//	log.Println(err)
 		//}
 
-		var result JsonRpcResponse
 		raw, err := ioutil.ReadAll(res.Body)
 		if err != nil {
 			log.Error(err)

@@ -10,10 +10,10 @@ import (
 
 	logging "github.com/ipfs/go-log/v2"
 
-	"github.com/mining-pool/not-only-mining-pool/banningManager"
+	"github.com/mining-pool/not-only-mining-pool/bans"
 	"github.com/mining-pool/not-only-mining-pool/config"
-	"github.com/mining-pool/not-only-mining-pool/daemonManager"
-	"github.com/mining-pool/not-only-mining-pool/jobManager"
+	"github.com/mining-pool/not-only-mining-pool/daemons"
+	"github.com/mining-pool/not-only-mining-pool/jobs"
 	"github.com/mining-pool/not-only-mining-pool/vardiff"
 )
 
@@ -23,17 +23,17 @@ type Server struct {
 	Options  *config.Options
 	Listener net.Listener
 
-	DaemonManager       *daemonManager.DaemonManager
+	DaemonManager       *daemons.DaemonManager
 	VarDiff             *vardiff.VarDiff
-	JobManager          *jobManager.JobManager
+	JobManager          *jobs.JobManager
 	StratumClients      map[uint64]*Client
 	SubscriptionCounter *SubscriptionCounter
-	BanningManager      *banningManager.BanningManager
+	BanningManager      *bans.BanningManager
 
 	rebroadcastTicker *time.Ticker
 }
 
-func NewStratumServer(options *config.Options, jm *jobManager.JobManager, bm *banningManager.BanningManager) *Server {
+func NewStratumServer(options *config.Options, jm *jobs.JobManager, bm *bans.BanningManager) *Server {
 	return &Server{
 		Options:             options,
 		BanningManager:      bm,

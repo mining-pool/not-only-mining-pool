@@ -1,4 +1,4 @@
-package banningManager
+package bans
 
 import (
 	"time"
