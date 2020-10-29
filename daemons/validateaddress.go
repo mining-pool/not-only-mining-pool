@@ -9,7 +9,7 @@ type ValidateAddress struct {
 	Isvalid      bool   `json:"isvalid"`
 	Address      string `json:"address"`
 	ScriptPubKey string `json:"scriptPubKey"`
-	Ismine       bool   `json:"ismine"`
+	IsMine       bool   `json:"ismine"`
 	Iswatchonly  bool   `json:"iswatchonly"`
 	Isscript     bool   `json:"isscript"`
 	Iswitness    bool   `json:"iswitness"`
@@ -37,12 +37,12 @@ type ValidateAddress struct {
 	} `json:"labels"`
 }
 
-func BytesToValidateAddress(b []byte) *ValidateAddress {
+func BytesToValidateAddress(b []byte) (*ValidateAddress, error) {
 	var validateAddress ValidateAddress
 	err := json.Unmarshal(b, &validateAddress)
 	if err != nil {
-		log.Fatal(fmt.Sprint("validateAddress call failed with error ", err))
+		return nil, fmt.Errorf("unmashal validateAddress response %s failed with error %s", b, err)
 	}
 
-	return &validateAddress
+	return &validateAddress, nil
 }

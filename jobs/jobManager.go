@@ -93,7 +93,7 @@ func (jm *JobManager) ProcessShare(share *types.Share) {
 }
 
 func (jm *JobManager) CheckBlockAccepted(blockHash string) (isAccepted bool, tx string) {
-	_, results := jm.DaemonManager.CmdAll("getblock", []interface{}{blockHash})
+	results, _ := jm.DaemonManager.CmdAll("getblock", []interface{}{blockHash})
 
 	isAccepted = true
 	for i := range results {

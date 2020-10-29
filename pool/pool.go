@@ -32,7 +32,6 @@ type Pool struct {
 	StratumServer *stratum.Server
 
 	Options                    *config.Options
-	Magnitude                  uint64
 	CoinPrecision              int
 	HasGetInfo                 bool
 	Stats                      *Stats
@@ -56,24 +55,20 @@ func NewPool(options *config.Options) *Pool {
 		}
 	}
 
-	var magnitude int64 = 100000000 //sat
+	var precision int = 8 //sat
 	if !options.DisablePayment {
-		_, getBalance, _ := dm.Cmd("getbalance", []interface{}{})
+		_, getBalance, _, err := dm.Cmd("getbalance", []interface{}{})
+		if err != nil {
+			log.Panic(err)
+		}
 
 		if getBalance.Error != nil {
 			log.Fatal(errors.New(fmt.Sprint(getBalance.Error)))
 		}
 
-		split0 := bytes.Split(utils.Jsonify(getBalance), []byte(`result":`))
-		split2 := bytes.Split(split0[1], []byte(","))
-		split3 := bytes.Split(split2[0], []byte("."))
-		d := split3[1]
-
-		var err error
-		magnitude, err = strconv.ParseInt("10"+strconv.Itoa(len(d))+"0", 10, 64)
-		if err != nil {
-			log.Fatal("ErrorCode detecting number of satoshis in a coin, cannot do payments processing. Tried parsing: ", string(utils.Jsonify(getBalance)))
-		}
+		split := strings.Split(string(getBalance.Result), ".")
+		precision = len(split[1])
+		log.Warnf("coin precision is %d", precision)
 	}
 
 	db := storage.NewStorage(options.Coin.Name, options.Storage)
@@ -89,8 +84,7 @@ func NewPool(options *config.Options) *Pool {
 		APIServer:     s,
 
 		StratumServer: stratum.NewStratumServer(options, jm, bm),
-		Magnitude:     uint64(magnitude),
-		CoinPrecision: len(strconv.FormatUint(uint64(magnitude), 10)) - 1,
+		CoinPrecision: precision,
 		Stats:         NewStats(),
 	}
 }
@@ -161,8 +155,11 @@ func (p *Pool) DetectCoinData() {
 	var diff float64
 
 	// getdifficulty
-	_, rpcResponse, _ := p.DaemonManager.Cmd("getdifficulty", []interface{}{})
-	if rpcResponse.Error != nil || rpcResponse == nil {
+	_, rpcResponse, _, err := p.DaemonManager.Cmd("getdifficulty", []interface{}{})
+	if err != nil {
+		log.Panic(err)
+	}
+	if rpcResponse == nil || rpcResponse.Error != nil {
 		log.Error("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
 		return
 	}
@@ -185,15 +182,23 @@ func (p *Pool) DetectCoinData() {
 	}
 
 	// getmininginfo
-	_, rpcResponse, _ = p.DaemonManager.Cmd("getmininginfo", []interface{}{})
-	if rpcResponse.Error != nil || rpcResponse == nil {
+	_, rpcResponse, _, err = p.DaemonManager.Cmd("getmininginfo", []interface{}{})
+	if err != nil {
+		log.Panic(err)
+	}
+
+	if rpcResponse == nil || rpcResponse.Error != nil {
 		log.Error("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
 		return
 	}
 	getMiningInfo := daemons.BytesToGetMiningInfo(rpcResponse.Result)
 	p.Stats.NetworkHashrate = getMiningInfo.Networkhashps
 
-	_, rpcResponse, _ = p.DaemonManager.Cmd("submitblock", []interface{}{})
+	_, rpcResponse, _, err = p.DaemonManager.Cmd("submitblock", []interface{}{})
+	if err != nil {
+		log.Panic(err)
+	}
+
 	if rpcResponse == nil || rpcResponse.Error == nil {
 		log.Error("Could not start pool, error with init batch RPC call: " + utils.JsonifyIndentString(rpcResponse))
 		return
@@ -207,14 +212,22 @@ func (p *Pool) DetectCoinData() {
 		log.Fatal("Could not detect block submission RPC method, " + utils.JsonifyIndentString(rpcResponse))
 	}
 
-	_, rpcResponse, _ = p.DaemonManager.Cmd("getwalletinfo", []interface{}{})
-	if rpcResponse.Error != nil || rpcResponse == nil {
+	_, rpcResponse, _, err = p.DaemonManager.Cmd("getwalletinfo", []interface{}{})
+	if err != nil {
+		log.Panic(err)
+	}
+
+	if rpcResponse == nil || rpcResponse.Error != nil {
 		log.Error("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
 		return
 	}
 
-	_, rpcResponse, _ = p.DaemonManager.Cmd("getinfo", []interface{}{})
-	if rpcResponse.Error == nil && rpcResponse != nil {
+	_, rpcResponse, _, err = p.DaemonManager.Cmd("getinfo", []interface{}{})
+	if err != nil {
+		log.Panic(err)
+	}
+
+	if rpcResponse != nil && rpcResponse.Error == nil {
 		getInfo := daemons.BytesToGetInfo(rpcResponse.Result)
 
 		p.Options.Coin.Testnet = getInfo.Testnet
@@ -223,14 +236,20 @@ func (p *Pool) DetectCoinData() {
 
 		p.Stats.Connections = getInfo.Connections
 	} else {
-		_, rpcResponse, _ := p.DaemonManager.Cmd("getnetworkinfo", []interface{}{})
+		_, rpcResponse, _, err := p.DaemonManager.Cmd("getnetworkinfo", []interface{}{})
+		if err != nil {
+			log.Panic(err)
+		}
 		if rpcResponse.Error != nil || rpcResponse == nil {
 			log.Error("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
 			return
 		}
 		getNetworkInfo := daemons.BytesToGetNetworkInfo(rpcResponse.Result)
 
-		_, rpcResponse, _ = p.DaemonManager.Cmd("getblockchaininfo", []interface{}{})
+		_, rpcResponse, _, err = p.DaemonManager.Cmd("getblockchaininfo", []interface{}{})
+		if err != nil {
+			log.Panic(err)
+		}
 		if rpcResponse.Error != nil || rpcResponse == nil {
 			log.Error("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
 			return
@@ -277,7 +296,7 @@ func (p *Pool) OutputPoolInfo() {
 }
 
 func (p *Pool) CheckAllReady() {
-	_, results := p.DaemonManager.CmdAll("getblocktemplate", []interface{}{map[string]interface{}{"capabilities": []string{"coinbasetxn", "workid", "coinbase/append"}, "rules": []string{"segwit"}}})
+	results, _ := p.DaemonManager.CmdAll("getblocktemplate", []interface{}{map[string]interface{}{"capabilities": []string{"coinbasetxn", "workid", "coinbase/append"}, "rules": []string{"segwit"}}})
 	for i := range results {
 		if results[i] == nil {
 			log.Fatalf("daemon %s is not available", p.DaemonManager.Daemons[i])

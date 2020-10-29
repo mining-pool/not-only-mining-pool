@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strconv"
@@ -52,7 +53,7 @@ func (dm *DaemonManager) Check() {
 }
 
 func (dm *DaemonManager) IsAllOnline() bool {
-	responses, _ := dm.CmdAll("getpeerinfo", []interface{}{})
+	_, responses := dm.CmdAll("getpeerinfo", []interface{}{})
 	for _, res := range responses {
 		if res.StatusCode/100 != 2 {
 			return false
@@ -89,7 +90,11 @@ func (dm *DaemonManager) DoHttpRequest(daemon *config.DaemonOptions, reqRawData 
 	return client.Do(req)
 }
 
-func (dm *DaemonManager) BatchCmd(commands []interface{}) (*config.DaemonOptions, []*JsonRpcResponse, error) {
+// BatchCmd will run a batch cmd on the wallet's rpc server
+// the batch cmd is called on daemons one by one and return the first successful response
+// batch cmd is list/set of normal rpc cmd, but batched into one rpc request
+// the response is also a list
+func (dm *DaemonManager) BatchCmd(commands []interface{}) (int, []*JsonRpcResponse, error) {
 	requestJson := make([]map[string]interface{}, len(commands))
 	for i := range commands {
 		requestJson[i] = map[string]interface{}{
@@ -103,23 +108,23 @@ func (dm *DaemonManager) BatchCmd(commands []interface{}) (*config.DaemonOptions
 		raw, _ := json.Marshal(requestJson)
 		res, err := dm.DoHttpRequest(dm.Daemons[i], raw)
 		if err != nil {
-			return dm.Daemons[i], nil, err
+			return i, nil, err
 		}
 		var rpcResponses []*JsonRpcResponse
 		err = json.NewDecoder(res.Body).Decode(&rpcResponses)
 		if err != nil {
-			return dm.Daemons[i], nil, err
+			return i, nil, err
 		}
 
-		return dm.Daemons[i], rpcResponses, err
+		return i, rpcResponses, err
 	}
 
-	return nil, nil, nil
+	return -1, nil, nil
 }
 
 // CmdAll sends the rpc call to all daemon, and never break because of any error.
 // So the elem in responses may be nil
-func (dm *DaemonManager) CmdAll(method string, params []interface{}) (responses []*http.Response, results []*JsonRpcResponse) {
+func (dm *DaemonManager) CmdAll(method string, params []interface{}) (results []*JsonRpcResponse, responses []*http.Response) {
 	responses = make([]*http.Response, len(dm.Daemons))
 	results = make([]*JsonRpcResponse, len(dm.Daemons))
 
@@ -173,7 +178,7 @@ func (dm *DaemonManager) CmdAll(method string, params []interface{}) (responses 
 
 	wg.Wait()
 
-	return responses, results
+	return results, responses
 }
 
 func (dm *DaemonManager) CheckStatusCode(statusCode int) error {
@@ -205,7 +210,7 @@ func (dm *DaemonManager) CheckStatusCode(statusCode int) error {
 
 // Cmd will call daemons one by one and return the first answer
 // one by one not all is to try fetching from the same one not random one
-func (dm *DaemonManager) Cmd(method string, params []interface{}) (*config.DaemonOptions, *JsonRpcResponse, *http.Response) {
+func (dm *DaemonManager) Cmd(method string, params []interface{}) (int, *JsonRpcResponse, *http.Response, error) {
 	reqRawData, err := json.Marshal(map[string]interface{}{
 		"id":     utils.RandPositiveInt64(),
 		"method": method,
@@ -239,9 +244,8 @@ func (dm *DaemonManager) Cmd(method string, params []interface{}) (*config.Daemo
 			log.Error(err)
 		}
 
-		return dm.Daemons[i], &result, res
+		return i, &result, res, nil
 	}
 
-	log.Error("failed getting GBT from all daemons!")
-	return nil, nil, nil
+	return -1, nil, nil, fmt.Errorf("all daemons are down") // avoid nil panic
 }

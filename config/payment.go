@@ -37,3 +37,9 @@ func (r *Recipient) GetScript() []byte {
 
 	return r.script
 }
+
+type PaymentOptions struct {
+	Interval   int64
+	MinPayment float64
+	Daemon     int
+}

@@ -17,13 +17,14 @@ type Options struct {
 	EmitInvalidBlockHashes bool `json:"emitInvalidBlockHashes"`
 	TCPProxyProtocol       bool `json:"tcpProxyProtocol"` // http://www.haproxy.org/download/1.8/doc/proxy-protocol.txt
 
-	API       *APIOptions          `json:"api"`
-	Banning   *BanningOptions      `json:"banning"`
-	Ports     map[int]*PortOptions `json:"ports"`
-	Daemons   []*DaemonOptions     `json:"daemons"`
-	P2P       *P2POptions          `json:"p2p"`
-	Storage   *RedisOptions        `json:"storage"`
-	Algorithm *AlgorithmOptions    `json:"algorithm"`
+	API            *APIOptions          `json:"api"`
+	Banning        *BanningOptions      `json:"banning"`
+	Ports          map[int]*PortOptions `json:"ports"`
+	Daemons        []*DaemonOptions     `json:"daemons"`
+	P2P            *P2POptions          `json:"p2p"`
+	Storage        *RedisOptions        `json:"storage"`
+	Algorithm      *AlgorithmOptions    `json:"algorithm"`
+	PaymentOptions *PaymentOptions      `json:"payment"`
 }
 
 func (o *Options) TotalFeePercent() float64 {
