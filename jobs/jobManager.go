@@ -2,12 +2,6 @@ package jobs
 
 import (
 	"encoding/hex"
-	"math/big"
-	"net"
-	"strconv"
-	"strings"
-	"time"
-
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/mining-pool/not-only-mining-pool/algorithm"
 	"github.com/mining-pool/not-only-mining-pool/config"
@@ -15,6 +9,11 @@ import (
 	"github.com/mining-pool/not-only-mining-pool/storage"
 	"github.com/mining-pool/not-only-mining-pool/types"
 	"github.com/mining-pool/not-only-mining-pool/utils"
+	"math/big"
+	"net"
+	"strconv"
+	"strings"
+	"time"
 )
 
 var log = logging.Logger("jobMgr")

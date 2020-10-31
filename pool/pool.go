@@ -2,8 +2,8 @@ package pool
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
+	"github.com/mining-pool/not-only-mining-pool/payments"
 	"reflect"
 	"strconv"
 	"strings"
@@ -25,14 +25,14 @@ import (
 var log = logging.Logger("pool")
 
 type Pool struct {
-	DaemonManager *daemons.DaemonManager
-	JobManager    *jobs.JobManager
-	P2PManager    *p2p.Peer
+	DaemonManager  *daemons.DaemonManager
+	PaymentManager *payments.PaymentManager
+	JobManager     *jobs.JobManager
+	P2PManager     *p2p.Peer
 
 	StratumServer *stratum.Server
 
 	Options                    *config.Options
-	CoinPrecision              int
 	HasGetInfo                 bool
 	Stats                      *Stats
 	BlockPollingIntervalTicker *time.Ticker
@@ -55,36 +55,21 @@ func NewPool(options *config.Options) *Pool {
 		}
 	}
 
-	var precision int = 8 //sat
-	if !options.DisablePayment {
-		_, getBalance, _, err := dm.Cmd("getbalance", []interface{}{})
-		if err != nil {
-			log.Panic(err)
-		}
-
-		if getBalance.Error != nil {
-			log.Fatal(errors.New(fmt.Sprint(getBalance.Error)))
-		}
-
-		split := strings.Split(string(getBalance.Result), ".")
-		precision = len(split[1])
-		log.Warnf("coin precision is %d", precision)
-	}
-
 	db := storage.NewStorage(options.Coin.Name, options.Storage)
 
+	pm := payments.NewPaymentManager(options.PaymentOptions, options.PoolAddress, dm, db)
 	jm := jobs.NewJobManager(options, dm, db)
 	bm := bans.NewBanningManager(options.Banning)
 	s := api.NewAPIServer(options, db)
 
 	return &Pool{
-		Options:       options,
-		DaemonManager: dm,
-		JobManager:    jm,
-		APIServer:     s,
+		Options:        options,
+		DaemonManager:  dm,
+		JobManager:     jm,
+		APIServer:      s,
+		PaymentManager: pm,
 
 		StratumServer: stratum.NewStratumServer(options, jm, bm),
-		CoinPrecision: precision,
 		Stats:         NewStats(),
 	}
 }

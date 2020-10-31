@@ -10,6 +10,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var log = logging.Logger("payments")
@@ -23,8 +24,6 @@ const (
 )
 
 type PaymentManager struct {
-	OnPay chan struct{}
-
 	options *config.PaymentOptions
 	dm      *daemons.DaemonManager
 	db      *storage.DB
@@ -36,8 +35,6 @@ type PaymentManager struct {
 
 func NewPaymentManager(options *config.PaymentOptions, poolAddr *config.Recipient, dm *daemons.DaemonManager, db *storage.DB) *PaymentManager {
 	pm := &PaymentManager{
-		OnPay: make(chan struct{}),
-
 		options: options,
 		dm:      dm,
 
@@ -52,23 +49,35 @@ func NewPaymentManager(options *config.PaymentOptions, poolAddr *config.Recipien
 }
 
 func (pm *PaymentManager) Init() {
-	pm.validatePoolAddress()
+	err := pm.validatePoolAddress()
+	if err != nil {
+		log.Panic(err)
+	}
 
-	pm.setMultiplier()
+	err = pm.setMultiplier()
+	if err != nil {
+		log.Panic(err)
+	}
 }
 
 func (pm *PaymentManager) Serve() {
+	interval := time.NewTicker(time.Duration(pm.options.Interval) * time.Second)
+
 	func() {
 		for {
-			<-pm.OnPay
-			pm.processPayments()
+			<-interval.C
+			err := pm.processPayments()
+			if err != nil {
+				log.Error("payment module exit: ", err)
+				return
+			}
 		}
 	}()
 }
 
 func (pm *PaymentManager) validatePoolAddress() error {
 	// validate addr
-	i, result, _, err := pm.dm.Cmd("validateaddress", []interface{}{pm.PoolAddress.Address})
+	i, result, _, err := pm.dm.Cmd("getaddressinfo", []interface{}{pm.PoolAddress.Address}) // DEPRECATION WARNING: Parts of this command(validateaddress) have been deprecated and moved to getaddressinfo.
 	if err != nil {
 		return err
 	}
@@ -311,7 +320,7 @@ type Worker struct {
 	Balance       uint64  // sat
 	Reward        uint64  // sat
 	Sent          float64 // sat
-	BalanceChange uint64  // sat
+	BalanceChange int     // sat
 }
 
 // Calculate if any payments are ready to be sent and trigger them sending
@@ -329,9 +338,9 @@ func (pm *PaymentManager) trySend(workers map[string]*Worker, pendingBlocks []*P
 			var address = worker.Address
 			addressAmounts[address] = pm.SatToCoin(toSend)
 			worker.Sent = addressAmounts[address]
-			worker.BalanceChange = u64Min(worker.Balance, toSend) * -1
+			worker.BalanceChange = int(u64Min(worker.Balance, toSend)) * -1
 		} else {
-			worker.BalanceChange = u64Max(toSend-worker.Balance, 0)
+			worker.BalanceChange = int(u64Max(toSend-worker.Balance, 0))
 			worker.Sent = 0
 		}
 	}

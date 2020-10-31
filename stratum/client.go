@@ -254,7 +254,7 @@ func (sc *Client) HandleSubmit(message *daemons.JsonRpcRequest) {
 
 	if share.ErrorCode == types.ErrLowDiffShare {
 		// warn the miner with current diff
-		log.Error("Error on handling submit: sending new diff ", string(utils.Jsonify([]json.RawMessage{utils.Jsonify(sc.CurrentDifficulty)})), " to miner")
+		log.Error("failed handling submit: sending new diff ", string(utils.Jsonify([]json.RawMessage{utils.Jsonify(sc.CurrentDifficulty)})), " to miner")
 		f, _ := sc.CurrentDifficulty.Float64()
 		sc.SendJsonRPC(&daemons.JsonRpcRequest{
 			Id:     nil,

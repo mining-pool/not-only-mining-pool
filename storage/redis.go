@@ -49,7 +49,7 @@ func (s *DB) PutShare(share *types.Share, accepted bool) {
 	ppl.SAdd(ctx, s.coin+":miner:"+share.Miner+":rigs", share.Rig) // rig index
 
 	if share.ErrorCode == 0 {
-		log.Warn("recording valid share")
+		log.Info("recording valid share")
 		ppl.HIncrByFloat(ctx, s.coin+":pool:contrib", share.Miner, share.Diff)
 		ppl.HIncrBy(ctx, s.coin+":miners:validShares", share.Miner, 1)
 

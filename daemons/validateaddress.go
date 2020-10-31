@@ -5,6 +5,7 @@ import (
 	"fmt"
 )
 
+// DEPRECATION WARNING: Parts of this command have been deprecated and moved to getaddressinfo.
 type ValidateAddress struct {
 	Isvalid      bool   `json:"isvalid"`
 	Address      string `json:"address"`

@@ -39,7 +39,8 @@ func (r *Recipient) GetScript() []byte {
 }
 
 type PaymentOptions struct {
-	Interval   int64
-	MinPayment float64
-	Daemon     int
+	Interval   int64   `json:"interval"`
+	MinPayment float64 `json:"minPayment"`
+
+	Daemon int `json:"daemon"`
 }
