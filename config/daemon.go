@@ -13,7 +13,7 @@ type DaemonOptions struct {
 }
 
 func (d *DaemonOptions) String() string {
-	return d.User + ":" + d.Password + "@" + d.Host + strconv.FormatInt(int64(d.Port), 10)
+	return d.User + "@" + d.Host + ":" + strconv.FormatInt(int64(d.Port), 10)
 }
 
 func (d *DaemonOptions) URL() string {

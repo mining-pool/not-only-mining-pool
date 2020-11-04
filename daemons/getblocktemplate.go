@@ -93,9 +93,12 @@ type GetBlockTemplate struct {
 
 // then JobManager.ProcessTemplate(rpcData)
 func (dm *DaemonManager) GetBlockTemplate() (getBlockTemplate *GetBlockTemplate, err error) {
-	instance, result, _ := dm.Cmd("getblocktemplate",
+	instance, result, _, err := dm.Cmd("getblocktemplate",
 		[]interface{}{map[string]interface{}{"capabilities": []string{"coinbasetxn", "workid", "coinbase/append"}, "rules": []string{"segwit"}}},
 	)
+	if err != nil {
+		return nil, err
+	}
 
 	if result.Error != nil {
 		return nil, errors.New(fmt.Sprint("getblocktemplate call failed for daemon instance ", instance, " with error ", result.Error))

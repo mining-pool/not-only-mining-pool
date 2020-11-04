@@ -49,7 +49,7 @@ func (s *DB) PutShare(share *types.Share, accepted bool) {
 	ppl.SAdd(ctx, s.coin+":miner:"+share.Miner+":rigs", share.Rig) // rig index
 
 	if share.ErrorCode == 0 {
-		log.Warn("recording valid share")
+		log.Info("recording valid share")
 		ppl.HIncrByFloat(ctx, s.coin+":pool:contrib", share.Miner, share.Diff)
 		ppl.HIncrBy(ctx, s.coin+":miners:validShares", share.Miner, 1)
 
@@ -212,4 +212,59 @@ func (s *DB) ConfirmBlock(blockHash string) (ok bool, err error) {
 // KickBlock alt one pending block to kicked
 func (s *DB) KickBlock(blockHash string) (ok bool, err error) {
 	return s.SMove(context.Background(), s.coin+":blocks:pending", s.coin+":blocks:kicked", blockHash).Result()
+}
+
+func (s *DB) GetAllMinerBalances() (map[string]float64, error) {
+	ss, err := s.HGetAll(context.Background(), s.coin+":balances").Result()
+	if err != nil {
+		return nil, err
+	}
+	balances := make(map[string]float64)
+	for minerName, strBalance := range ss {
+		balance, err := strconv.ParseFloat(strBalance, 64)
+		if err != nil {
+			return nil, err
+		}
+		balances[minerName] = balance
+	}
+
+	return balances, nil
+}
+
+func (s *DB) GetAllPendingBlocks() ([]*PendingBlock, error) {
+	strBlocks, err := s.SMembers(context.Background(), s.coin+":pool:pending").Result()
+	if err != nil {
+		return nil, err
+	}
+
+	blocks := make([]*PendingBlock, 0, len(strBlocks))
+	for i := range strBlocks {
+		block, err := NewPendingBlockFromString(strBlocks[i])
+		if err != nil {
+			return nil, err
+		}
+
+		blocks = append(blocks, block)
+	}
+
+	return blocks, nil
+}
+
+func (s *DB) GetRoundContrib(height uint64) (map[string]float64, error) {
+	m, err := s.HGetAll(context.Background(), s.coin+":shares:round"+strconv.FormatUint(height, 10)).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	contribMap := make(map[string]float64)
+	for minerName, strContrib := range m {
+		contrib, err := strconv.ParseFloat(strContrib, 64)
+		if err != nil {
+			return nil, err
+		}
+
+		contribMap[minerName] = contrib
+	}
+
+	return contribMap, nil
 }
