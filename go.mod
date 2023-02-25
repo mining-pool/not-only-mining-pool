@@ -9,5 +9,5 @@ require (
 	github.com/ipfs/go-log/v2 v2.1.1
 	github.com/mr-tron/base58 v1.2.0
 	github.com/samli88/go-x11-hash v0.0.0-20180604013825-c37c1282f506
-	golang.org/x/crypto v0.0.0-20201012173705-84dcc777aaee
+	golang.org/x/crypto v0.1.0
 )
