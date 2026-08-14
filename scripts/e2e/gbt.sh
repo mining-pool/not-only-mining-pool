@@ -170,6 +170,6 @@ elif grep -q "Found Block" "$DIR/pool.log"; then
 else
   fail "$SYM ($ALGO): no block (height $H0 -> $H1)"
   grep -iE "found block|rejected|invalid|low diff|engine share|candidate" "$DIR/pool.log" | tail -5
-  grep -iE "submit|error|response" "$DIR/miner.log" | tail -3
+  echo "--- miner.log ---"; tail -25 "$DIR/miner.log" 2>/dev/null
   exit 1
 fi

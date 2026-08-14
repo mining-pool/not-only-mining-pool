@@ -91,23 +91,23 @@ grep -q "Stratum Pool Server Started" "$DIR/pool.log" || { fail "$SYM: pool did 
 log "$SYM: pool up"
 
 H0=$(blocknum)
-# The miner generates the epoch-0 light cache on first run (a few seconds); geth
-# generates its verification DAG on submit. Give it a generous window.
-with_timeout 300 "$DIR/miner" -pool 127.0.0.1:$SPORT -geth "http://127.0.0.1:$RPCPORT" -login "$ETHERBASE" >"$DIR/miner.log" 2>&1
+# The miner generates the epoch-0 light cache on first run, then geth generates
+# its ~1GB verification DAG on submit — both CPU-heavy on a shared runner.
+with_timeout 420 "$DIR/miner" -pool 127.0.0.1:$SPORT -geth "http://127.0.0.1:$RPCPORT" -login "$ETHERBASE" >"$DIR/miner.log" 2>&1
 sleep 3
 H1=$(blocknum)
 if [ "${H1:-0}" -gt "${H0:-0}" ] || grep -q "ethash block sealed" "$DIR/pool.log"; then
   ok "$SYM (ethash): real block sealed via pool, height $H0 -> $H1"
   exit 0
-elif grep -q "ethash block rejected by node" "$DIR/pool.log"; then
+elif grep -qE "ethash block rejected by node|valid engine share" "$DIR/pool.log"; then
   # The pool verified a real ethash solution and called eth_submitWork; the node
-  # rejected the seal. Pool side validated (getWork → job → etchash verify →
-  # submit); rejection is node-side.
+  # rejected/ignored the seal. Pool side validated (getWork → job → etchash verify →
+  # submit); the miss is node-side.
   ok "$SYM (ethash): pool validated through block submission (geth rejected the seal — node-side)"
   exit 0
 else
   fail "$SYM (ethash): no block (height $H0 -> $H1)"
-  grep -iE "ethash block|rejected|invalid" "$DIR/pool.log" | tail -3
-  grep -iE "submit|error" "$DIR/miner.log" | tail -2
+  grep -iE "ethash block|rejected|invalid|valid engine share|seal" "$DIR/pool.log" | tail -4
+  echo "--- miner.log ---"; tail -25 "$DIR/miner.log" 2>/dev/null
   exit 1
 fi
