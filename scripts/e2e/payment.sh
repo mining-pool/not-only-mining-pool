@@ -46,12 +46,18 @@ MINER_ADDR=$(w getnewaddress "" legacy)   # the miner's worker name == its payou
 JUNK_ADDR=$(w getnewaddress "" legacy)
 [ -z "$POOL_ADDR" ] || [ -z "$MINER_ADDR" ] && { fail "$SYM: could not get wallet addresses"; exit 1; }
 
-# Peg node time to wall-clock (setmocktime) so rapidly-generated maturity blocks
-# don't push the chain time ahead of the pool's nTime window (which is anchored to
-# the pool's real clock); each mode re-pegs it before mining.
-cli setmocktime "$(date +%s)" >/dev/null 2>&1
-# pre-fund the wallet so it can cover payouts + fees
+# pre-fund the wallet with mature coins so sendmany can pay from them (payouts do
+# not spend the freshly-mined coinbase, which stays immature), then wait for
+# wall-clock to catch up to the chain time these rapid blocks pushed ahead.
 w generatetoaddress 101 "$POOL_ADDR" >/dev/null 2>&1
+wait_chain_time() {
+  local n="${1:-30}" i ct
+  for i in $(seq 1 "$n"); do
+    ct=$(cli getblocktemplate '{"rules":["segwit"]}' 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('curtime',0))" 2>/dev/null || echo 0)
+    [ "${ct:-0}" -le "$(( $(date +%s) + 3 ))" ] && return 0; sleep 1
+  done
+}
+wait_chain_time 150
 log "$SYM: node up height=$(cli getblockcount) pool=$POOL_ADDR miner=$MINER_ADDR"
 
 log "$SYM: building pool + e2eminer"
@@ -63,8 +69,12 @@ mkconfig() {
   python3 - "$POOL_ADDR" "$RPCPORT" "$SPORT" "$DIR" "$COIN" "$1" <<'PY'
 import json,sys
 addr,rpc,sport,d,coin,mode=sys.argv[1:7]
+# minConfirmations 1: the payer distributes a block once it has 1 confirmation
+# (the maturity policy itself is unit-tested); sendmany still spends the mature
+# pre-funded balance, so we avoid generating 100 blocks (which would drift the
+# chain time past the pool's nTime window between modes).
 pay={"interval":4,"minPayment":0,"daemon":0,"payMode":mode,"pplnsWindow":0,"ppsRate":0,
-     "magnitude":1e8,"minConfirmations":100,"addressCheckMethod":"getaddressinfo",
+     "magnitude":1e8,"minConfirmations":1,"addressCheckMethod":"getaddressinfo",
      "sendManyDummy":"","omitSendManyDummy":False}
 if mode=="pps": pay["ppsRate"]=100   # coin per share-difficulty; block reward funds the wallet
 c={"coin":{"name":coin,"symbol":"BTC"},"algorithm":{"name":"sha256d","multiplier":0,"sha256dBlockHasher":True},
@@ -87,17 +97,17 @@ paid_gt0() { [ -n "$1" ] && python3 -c "import sys;sys.exit(0 if float('$1')>0 e
 run_mode() {
   local mode="$1"
   redis-cli keys "$COIN:*" 2>/dev/null | xargs -r redis-cli del >/dev/null 2>&1
-  cli setmocktime "$(date +%s)" >/dev/null 2>&1   # keep chain time ≈ wall-clock
   mkconfig "$mode"
   free_port "$SPORT"
   ( cd "$DIR" && "$DIR/pool" -c config.json -l info >"pool.$mode.log" 2>&1 & )
   wait_pool_started "$DIR/pool.$mode.log" || { tail -20 "$DIR/pool.$mode.log" >&2; return 1; }
+  wait_chain_time 30   # small per-mode drift from the previous confirm block
 
   local H0; H0=$(cli getblockcount)
   with_timeout 240 "$DIR/miner" -pool 127.0.0.1:$SPORT -worker "$MINER_ADDR" -algo sha256d -coinbasehash sha256d -rpc "http://u:p@127.0.0.1:$RPCPORT" >"$DIR/miner.$mode.log" 2>&1
   sleep 2
   [ "$(cli getblockcount)" -gt "${H0:-0}" ] || { echo "no block mined" >&2; pkill -9 -f "$DIR/pool" 2>/dev/null; return 1; }
-  w generatetoaddress 100 "$JUNK_ADDR" >/dev/null 2>&1   # mature the coinbase
+  w generatetoaddress 1 "$JUNK_ADDR" >/dev/null 2>&1   # 1 confirmation (minConfirmations=1)
 
   local paid=""
   for i in $(seq 1 20); do
