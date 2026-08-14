@@ -2,378 +2,299 @@ package payments
 
 import (
 	"fmt"
+	"math"
+	"strings"
+	"time"
+
 	logging "github.com/ipfs/go-log/v2"
+
 	"github.com/mining-pool/not-only-mining-pool/config"
 	"github.com/mining-pool/not-only-mining-pool/daemons"
 	"github.com/mining-pool/not-only-mining-pool/storage"
-	"github.com/mining-pool/not-only-mining-pool/utils"
-	"math"
-	"strconv"
-	"strings"
-	"time"
 )
 
 var log = logging.Logger("payments")
 
-type PayMode int
-
-const (
-	PayOnManual PayMode = iota
-	PayPPLNS            // calc rewards on block found
-	PayPPS              // calc rewards every day
-)
-
+// PaymentManager pays miners proportionally to the shares they contributed to
+// each block round (PROP). It is fork-configurable via config.PaymentOptions so
+// one binary pays out on any bitcoind-family fork whose wallet RPC differs.
 type PaymentManager struct {
 	options *config.PaymentOptions
 	dm      *daemons.DaemonManager
 	db      *storage.DB
 
 	PoolAddress *config.Recipient
-	Magnitude   float64
-	MinPayment  uint64 // sat
+	Magnitude   float64 // base units (satoshis) per coin
+	MinPayment  uint64  // satoshis
 }
 
 func NewPaymentManager(options *config.PaymentOptions, poolAddr *config.Recipient, dm *daemons.DaemonManager, db *storage.DB) *PaymentManager {
 	pm := &PaymentManager{
-		options: options,
-		dm:      dm,
-
+		dm:          dm,
+		db:          db,
 		PoolAddress: poolAddr,
-		Magnitude:   0,
-		MinPayment:  0,
 	}
-
-	pm.Init()
-
+	// options is nil when payments are disabled; Init/Serve are then never called.
+	if options != nil {
+		pm.options = options.WithDefaults()
+	}
 	return pm
 }
 
-func (pm *PaymentManager) Init() {
-	err := pm.validatePoolAddress()
-	if err != nil {
-		log.Panic(err)
+// Init validates the pool owns its payout address and fixes the coin precision.
+// It must be called (once) before Serve, only when payments are enabled.
+func (pm *PaymentManager) Init() error {
+	if err := pm.validatePoolAddress(); err != nil {
+		return err
 	}
-
-	err = pm.setMultiplier()
-	if err != nil {
-		log.Panic(err)
-	}
+	return pm.setMagnitude()
 }
 
 func (pm *PaymentManager) Serve() {
-	interval := time.NewTicker(time.Duration(pm.options.Interval) * time.Second)
-
-	func() {
-		for {
-			<-interval.C
-			err := pm.processPayments()
-			if err != nil {
-				log.Error("payment module exit: ", err)
-				return
-			}
+	ticker := time.NewTicker(time.Duration(pm.options.Interval) * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		if err := pm.processPayments(); err != nil {
+			log.Error("payment run failed: ", err)
 		}
-	}()
+	}
 }
 
+// validatePoolAddress confirms the payment wallet owns the pool payout address,
+// so its coinbase rewards land somewhere the pool can spend from.
 func (pm *PaymentManager) validatePoolAddress() error {
-	// validate addr
-	instance, result, _ := pm.dm.Cmd("getaddressinfo", []interface{}{pm.PoolAddress.Address}) // DEPRECATION WARNING: Parts of this command(validateaddress) have been deprecated and moved to getaddressinfo.
+	instance, result, _ := pm.dm.Cmd(pm.options.AddressCheckMethod, []interface{}{pm.PoolAddress.Address})
 	if result == nil {
-		return fmt.Errorf("no response from payment processing daemon on getaddressinfo")
+		return fmt.Errorf("no response from payment daemon on %s", pm.options.AddressCheckMethod)
 	}
 	if result.Error != nil {
-		return fmt.Errorf("error with payment processing daemon %s, err: %s", instance.String(), result.Error.Message)
+		return fmt.Errorf("payment daemon %s: %s", instance.String(), result.Error.Message)
 	}
 
 	va, err := daemons.BytesToValidateAddress(result.Result)
 	if err != nil {
-		return fmt.Errorf("error with payment processing daemon, err: %s", err)
+		return err
 	}
-
 	if !va.IsMine {
-		return fmt.Errorf("daemon %s does not own pool address, payment processing can not be done", instance.String())
+		return fmt.Errorf("payment daemon %s does not own pool address %s; payouts impossible", instance.String(), pm.PoolAddress.Address)
 	}
-
-	return nil
-
-}
-
-func (pm *PaymentManager) setMultiplier() error {
-	// validate balance
-	instance, result, _ := pm.dm.Cmd("getbalance", []interface{}{})
-	if result == nil {
-		return fmt.Errorf("no response from payment processing daemon on getbalance")
-	}
-	if result.Error != nil {
-		return fmt.Errorf("error with payment processing daemon %s, err: %s", instance.String(), result.Error.Message)
-	}
-
-	//gb, err := daemons.BytesToGetBalance(result.Result)
-	//if err != nil {
-	//	return fmt.Errorf("error with payment processing daemon %s, err: %s ", pm.dm.Daemons[i].String(), err)
-	//}
-
-	split := strings.Split(string(result.Result), ".")
-
-	s := "1"
-	for range split[1] {
-		s += "0"
-	}
-
-	mul, err := strconv.ParseUint(s, 10, 64)
-	if err != nil {
-		log.Errorf("cannot parse %s. err: %s", s, err)
-	}
-	pm.Magnitude = float64(mul)
-	pm.MinPayment = pm.CoinToSat(pm.options.MinPayment)
-
 	return nil
 }
 
-func (pm *PaymentManager) processPayments() error {
-	// PPLNS solution:
-	//
-	// for range // not wg => keep balance safe
-	// validateaddress
-	// getbalance
-	// ['hgetall', coin + ':balances'],
-	// ['smembers', coin + ':blocksPending']
-	//
-	// {
-	//   blockHash: details[0],
-	//   txHash: details[1],
-	//   height: details[2],
-	// };
-	//
-	// gettransaction generatiion tx & getaccount pooladdress -> chech tx detail -> kick/orphan/confirm
-	//
-	// ['hgetall', coin + ':shares:round' + r.height]
-	// var reward = parseInt(round.reward * magnitude);
-	//
-	// sendmany [addressAccount, addressAmounts]
-	//
-	// ['hincrbyfloat', coin + ':balances', w, satoshisToCoins(Worker.balanceChange)]
-	// ['hincrbyfloat', coin + ':payouts', w, Worker.sent]
-	//
-	// smove => move block from pending to kick/orphan/confirm
-
-	workers, pbs, err := pm.readySend()
-	if err != nil {
-		return err
-	}
-	workers, pbs, err = pm.CalcRewards(workers, pbs)
-	if err != nil {
-		return err
-	}
-
-	pm.FinishPayment(workers, pbs)
-
-	return nil
-}
-
-type PendingBlock struct {
-	*storage.PendingBlock
-
-	Category storage.BlockCategory // helper field for category
-	Reward   float64               // unit: btc
-
-	CanDeleteShares bool
-	WorkerShares    map[string]float64
-}
-
-// Call redis to get an array of rounds - which are coinbase transactions and block heights from submitted
-// blocks.
-func (pm *PaymentManager) readySend() (map[string]*Worker, []*PendingBlock, error) {
-	// init workers from balances
-	f64Balances, err := pm.db.GetAllMinerBalances()
-	workers := make(map[string]*Worker)
-	for minerName, balance := range f64Balances {
-		workers[minerName] = &Worker{
-			Address:       minerName,
-			Balance:       pm.CoinToSat(balance),
-			Reward:        0,
-			Sent:          0,
-			BalanceChange: 0,
+// setMagnitude fixes the base-units-per-coin factor. It honours an explicit
+// config value and otherwise derives it from the wallet's getbalance precision.
+func (pm *PaymentManager) setMagnitude() error {
+	if pm.options.Magnitude > 0 {
+		pm.Magnitude = pm.options.Magnitude
+	} else {
+		instance, result, _ := pm.dm.Cmd("getbalance", []interface{}{})
+		if result == nil {
+			return fmt.Errorf("no response from payment daemon on getbalance")
 		}
+		if result.Error != nil {
+			return fmt.Errorf("payment daemon %s: %s", instance.String(), result.Error.Message)
+		}
+		decimals := 0
+		if parts := strings.SplitN(strings.TrimSpace(string(result.Result)), ".", 2); len(parts) == 2 {
+			decimals = len(strings.TrimRight(parts[1], "\n\r "))
+		}
+		if decimals == 0 {
+			decimals = 8 // safe bitcoin default when the balance is a whole number
+		}
+		pm.Magnitude = math.Pow10(decimals)
 	}
+	pm.MinPayment = pm.CoinToSat(pm.options.MinPayment)
+	log.Infof("payments: magnitude=%.0f min=%d sat interval=%ds maturity=%d", pm.Magnitude, pm.MinPayment, pm.options.Interval, pm.options.MinConfirmations)
+	return nil
+}
 
+// worker accumulates one miner's owed amount across a payout run.
+type worker struct {
+	Address string
+	Balance uint64 // carried-over unpaid balance (satoshis)
+	Reward  uint64 // rewards earned this run (satoshis)
+	Sent    uint64 // paid out this run (satoshis)
+}
+
+// matureBlock is a pending block whose reward is confirmed and ready to split.
+type matureBlock struct {
+	block  *storage.PendingBlock
+	reward uint64 // satoshis credited to the pool address
+}
+
+// processPayments runs one payout cycle: classify pending blocks by their
+// coinbase transaction (orphan / immature / mature), split each mature block's
+// reward across that round's shares, and pay every miner over the threshold —
+// persisting balances, payouts and block state only if sendmany succeeds.
+func (pm *PaymentManager) processPayments() error {
 	pendingBlocks, err := pm.db.GetAllPendingBlocks()
 	if err != nil {
-		return nil, nil, err
+		return err
+	}
+	if len(pendingBlocks) == 0 {
+		return nil
 	}
 
-	batchCMD := make([]interface{}, 0, len(pendingBlocks))
-	for i := range pendingBlocks {
-		batchCMD = append(batchCMD, []interface{}{"gettransaction", []string{pendingBlocks[i].TxHash}})
-	}
+	update := &storage.PaymentUpdate{Balances: map[string]float64{}, Paid: map[string]float64{}}
+	var matured []matureBlock
 
-	//batchCMD = append(batchCMD, []interface{}{"getaccount", []string{pm.PoolAddress.Address}})
-
-	_, results, err := pm.dm.BatchCmd(batchCMD)
+	// seed workers from carried-over balances
+	balances, err := pm.db.GetAllMinerBalances()
 	if err != nil {
-		return nil, nil, err
+		return err
+	}
+	workers := make(map[string]*worker, len(balances))
+	for miner, bal := range balances {
+		workers[miner] = &worker{Address: miner, Balance: pm.CoinToSat(bal)}
 	}
 
-	pbs := make([]*PendingBlock, len(pendingBlocks))
-	for i, result := range results {
-		pbs[i].PendingBlock = pendingBlocks[i]
-
-		if result.Error != nil && result.Error.Code == -5 {
-			log.Warnf("Daemon reports invalid transaction: %s", pendingBlocks[i].TxHash)
-			pbs[i].Category = storage.Kicked
-			continue
-		}
-
-		gt, err := daemons.BytesToGetTransaction(result.Result)
-		if err != nil {
-			log.Error(err)
-			continue
-		}
-
-		if gt.Details == nil || len(gt.Details) == 0 {
-			log.Errorf("Daemon reports no details for transaction: %s", pendingBlocks[i].TxHash)
-			continue
-		}
-
-		if result.Error != nil || result.Result == nil {
-			log.Warnf("Odd error with gettransaction %v", result)
-		}
-
-		var isGenerationTx bool
-		for i := range gt.Details {
-			if gt.Details[i].Address == pm.PoolAddress.Address {
-				isGenerationTx = true
-				break
-			}
-		}
-
-		if isGenerationTx {
-			pbs[i].Category = storage.BlockCategory(gt.Details[0].Category)
-		}
-
-		if pbs[i].Category == storage.Generate {
-			pbs[i].Reward = gt.Details[0].Amount // unit: btc
-		}
-
-	}
-
-	for _, pb := range pbs {
-		switch pb.Category {
-		case storage.Orphan, storage.Kicked:
-			//TODO delete shares
-			pb.CanDeleteShares = canDeleteShares(pbs, pb)
-		case storage.Generate:
-		default:
-			//
-		}
-	}
-
-	return workers, pbs, nil
-}
-
-func canDeleteShares(rounds []*PendingBlock, r *PendingBlock) bool {
-	for i := 0; i < len(rounds); i++ {
-		var compareR = rounds[i]
-		if compareR.Height == r.Height && compareR.Category != storage.Kicked && compareR.Category != storage.Orphan && compareR.Hash != r.Hash {
-			return false
-		}
-	}
-
-	return true
-}
-
-// Does a batch redis call to get shares contributed to each round. Then calculates the reward
-// amount owned to each miner for each round(block).
-func (pm *PaymentManager) CalcRewards(workers map[string]*Worker, pendingBlocks []*PendingBlock) (map[string]*Worker, []*PendingBlock, error) {
 	for _, pb := range pendingBlocks {
-		workerShares, err := pm.db.GetRoundContrib(pb.Height)
-		if err != nil {
-			return nil, nil, err
+		reward, category, confirmations, ok := pm.classifyBlock(pb)
+		if !ok {
+			continue // transient RPC problem; retry this block next run
 		}
-
-		workerActualRewards := make(map[string]float64)
-
-		switch pb.Category {
-		case storage.Kicked, storage.Orphan:
-			pb.WorkerShares = workerShares
-		case storage.Generate:
-			reward := pm.CoinToSat(pb.Reward)
-			var totalShares = 0.0
-			for _, share := range workerShares {
-				totalShares = totalShares + share
+		switch {
+		case category == string(storage.Orphan) || category == string(storage.Kicked):
+			update.Orphaned = append(update.Orphaned, pb.String())
+			update.DeleteRounds = append(update.DeleteRounds, pb.Height)
+		case category == string(storage.Immature) || confirmations < pm.options.MinConfirmations:
+			// not mature yet — leave it pending, we'll revisit next run
+		default: // generate / mature
+			shares, err := pm.db.GetRoundContrib(pb.Height)
+			if err != nil {
+				return err
 			}
-
-			for workerAddress, workerShare := range workerShares {
-				percent := workerShare / totalShares
-				workerActualRewards[workerAddress] = workerActualRewards[workerAddress] + math.Floor(float64(reward)*percent)
+			var total float64
+			for _, s := range shares {
+				total += s
 			}
+			if total <= 0 {
+				// block matured but no recorded shares to pay: orphan it so we
+				// don't leak the reward or loop forever.
+				update.Orphaned = append(update.Orphaned, pb.String())
+				update.DeleteRounds = append(update.DeleteRounds, pb.Height)
+				continue
+			}
+			rewardSat := pm.CoinToSat(reward)
+			for miner, share := range shares {
+				w := workers[miner]
+				if w == nil {
+					w = &worker{Address: miner}
+					workers[miner] = w
+				}
+				w.Reward += uint64(math.Floor(float64(rewardSat) * (share / total)))
+			}
+			matured = append(matured, matureBlock{block: pb, reward: rewardSat})
 		}
 	}
 
-	return workers, pendingBlocks, nil
+	if len(matured) == 0 {
+		// nothing to pay this run; still persist orphan moves so we don't rescan them.
+		if len(update.Orphaned) == 0 {
+			return nil
+		}
+		return pm.db.ApplyPayments(update)
+	}
+
+	if err := pm.settle(workers, update, 0); err != nil {
+		return err // sendmany failed — persist nothing, blocks stay pending for retry
+	}
+	for _, mb := range matured {
+		update.Confirmed = append(update.Confirmed, mb.block.String())
+		update.DeleteRounds = append(update.DeleteRounds, mb.block.Height)
+	}
+	return pm.db.ApplyPayments(update)
 }
 
-type Worker struct {
-	Address       string
-	Balance       uint64  // sat
-	Reward        uint64  // sat
-	Sent          float64 // sat
-	BalanceChange int     // sat
-}
-
-// Calculate if any payments are ready to be sent and trigger them sending
-// Get balance different for each address and pass it along as object of latest balances such as
-// {worker1: balance1, worker2, balance2}
-// when deciding the sent balance, it the difference should be -1*(amount they had in db),
-// if not sending the balance, the differnce should be +(the amount they earned this round)
-func (pm *PaymentManager) trySend(workers map[string]*Worker, pendingBlocks []*PendingBlock, withholdPercent float64) (map[string]*Worker, []*PendingBlock, error) {
-	var addressAmounts = map[string]float64{}
-	var totalSent = uint64(0)
-	for _, worker := range workers {
-		var toSend = uint64(math.Floor(float64(worker.Balance+worker.Reward) * (1 - withholdPercent)))
-		if toSend >= pm.MinPayment {
-			totalSent += toSend
-			var address = worker.Address
-			addressAmounts[address] = pm.SatToCoin(toSend)
-			worker.Sent = addressAmounts[address]
-			worker.BalanceChange = int(u64Min(worker.Balance, toSend)) * -1
-		} else {
-			worker.BalanceChange = int(u64Max(toSend-worker.Balance, 0))
-			worker.Sent = 0
-		}
-	}
-
-	if len(addressAmounts) == 0 {
-		return workers, pendingBlocks, nil
-	}
-
-	_, result, _ := pm.dm.Cmd("sendmany", []interface{}{"", addressAmounts}) // use default "" account (not addr)
+// classifyBlock looks up a pending block's coinbase transaction and reports the
+// reward credited to the pool address, its category and its confirmations. ok is
+// false only on a transient RPC failure (retry next run).
+func (pm *PaymentManager) classifyBlock(pb *storage.PendingBlock) (reward float64, category string, confirmations int64, ok bool) {
+	_, result, _ := pm.dm.Cmd("gettransaction", []interface{}{pb.TxHash})
 	if result == nil {
-		return nil, nil, fmt.Errorf("no response from payment processing daemon on sendmany")
+		return 0, "", 0, false
 	}
-
-	//Check if payments failed because wallet doesn't have enough coins to pay for tx fees
-	if result.Error != nil && result.Error.Code == -6 {
-		var higherPercent = withholdPercent + 0.01
-		log.Warn("Not enough funds to cover the tx fees for sending out payments, decreasing rewards by ", higherPercent*100, "% and retrying")
-		return pm.trySend(workers, pendingBlocks, higherPercent)
-	}
-
 	if result.Error != nil {
-		log.Error("Error trying to send payments with RPC sendmany ", utils.Jsonify(result.Error))
-		return nil, nil, fmt.Errorf("sendmany RPC error: %s", result.Error.Message)
-	}
-	log.Debug("Sent out a total of ", pm.SatToCoin(totalSent), " to ", len(addressAmounts), " workers")
-	if withholdPercent > 0 {
-		log.Warn("Had to withhold ", withholdPercent*100, "% of reward from miners to cover transaction fees. Fund pool wallet with coins to prevent this from happening")
+		if result.Error.Code == -5 { // tx not in wallet: the block never made it in
+			return 0, string(storage.Orphan), 0, true
+		}
+		log.Warnf("gettransaction %s: %s", pb.TxHash, result.Error.Message)
+		return 0, "", 0, false
 	}
 
-	return workers, pendingBlocks, nil
+	gt, err := daemons.BytesToGetTransaction(result.Result)
+	if err != nil {
+		log.Error(err)
+		return 0, "", 0, false
+	}
 
+	// find the detail crediting the pool address (the coinbase output).
+	category = string(storage.Generate)
+	reward = gt.Amount
+	for i := range gt.Details {
+		if gt.Details[i].Address == pm.PoolAddress.Address {
+			category = gt.Details[i].Category
+			reward = gt.Details[i].Amount
+			break
+		}
+	}
+	return reward, category, int64(gt.Confirmations), true
 }
 
-func (pm *PaymentManager) FinishPayment(workers map[string]*Worker, pds []*PendingBlock) {
-	pm.trySend(workers, pds, 0)
+// settle computes each worker's payout, calls sendmany, and (on success) fills
+// the update with the new balances and payouts. On -6 (insufficient funds for
+// fees) it retries withholding a little more so miners cover the tx fee.
+func (pm *PaymentManager) settle(workers map[string]*worker, update *storage.PaymentUpdate, withhold float64) error {
+	amounts := map[string]float64{}
+	for _, w := range workers {
+		owed := w.Balance + w.Reward
+		toSend := uint64(math.Floor(float64(owed) * (1 - withhold)))
+		if toSend >= pm.MinPayment && toSend > 0 {
+			amounts[w.Address] = pm.SatToCoin(toSend)
+			w.Sent = toSend
+		} else {
+			w.Sent = 0
+		}
+	}
+
+	if len(amounts) > 0 {
+		args := []interface{}{}
+		if !pm.options.OmitSendManyDummy {
+			args = append(args, pm.options.SendManyDummy)
+		}
+		args = append(args, amounts)
+
+		_, result, _ := pm.dm.Cmd("sendmany", args)
+		if result == nil {
+			return fmt.Errorf("no response from payment daemon on sendmany")
+		}
+		if result.Error != nil {
+			if result.Error.Code == -6 { // not enough funds to also cover the fee
+				next := withhold + 0.01
+				if next >= 1 {
+					return fmt.Errorf("wallet cannot cover sendmany fees even at 100%% withholding")
+				}
+				log.Warnf("insufficient funds for fees; retrying with %.0f%% withheld", next*100)
+				return pm.settle(workers, update, next)
+			}
+			return fmt.Errorf("sendmany failed: %s", result.Error.Message)
+		}
+		if withhold > 0 {
+			log.Warnf("paid %d workers (withheld %.0f%% for fees; fund the wallet to avoid this)", len(amounts), withhold*100)
+		} else {
+			log.Infof("paid %d workers", len(amounts))
+		}
+	}
+
+	// carry the unpaid remainder forward and record what was paid.
+	for _, w := range workers {
+		newBalance := (w.Balance + w.Reward) - w.Sent
+		update.Balances[w.Address] = pm.SatToCoin(newBalance)
+		if w.Sent > 0 {
+			update.Paid[w.Address] = pm.SatToCoin(w.Sent)
+		}
+	}
+	return nil
 }
 
 func (pm *PaymentManager) SatToCoin(sat uint64) float64 {
@@ -381,21 +302,8 @@ func (pm *PaymentManager) SatToCoin(sat uint64) float64 {
 }
 
 func (pm *PaymentManager) CoinToSat(coin float64) uint64 {
-	return uint64(math.Floor(coin * pm.Magnitude))
-}
-
-func u64Min(x, y uint64) uint64 {
-	if x < y {
-		return x
+	if coin <= 0 {
+		return 0
 	}
-
-	return y
-}
-
-func u64Max(x, y uint64) uint64 {
-	if x < y {
-		return y
-	}
-
-	return x
+	return uint64(math.Floor(coin*pm.Magnitude + 0.5))
 }

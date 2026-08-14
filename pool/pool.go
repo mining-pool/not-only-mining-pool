@@ -181,7 +181,9 @@ func (p *Pool) Init() {
 	p.APIServer.Serve()
 
 	if !p.Options.DisablePayment && p.Options.PaymentOptions != nil {
-		p.PaymentManager.Init()
+		if err := p.PaymentManager.Init(); err != nil {
+			log.Fatal("payment processing init failed: ", err)
+		}
 		go p.PaymentManager.Serve()
 	}
 

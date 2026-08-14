@@ -5,6 +5,7 @@ go 1.23
 toolchain go1.24.1
 
 require (
+	github.com/alicebob/miniredis/v2 v2.38.0
 	github.com/bitgoin/lyra2rev2 v0.0.0-20161212102046-bae9ad2043bb
 	github.com/c0mm4nd/go-bech32 v0.0.0-20201015031713-6bb434e0ac5d
 	github.com/etclabscore/go-etchash v0.0.0-20220831225151-7746dfe207b3
@@ -40,6 +41,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/stretchr/testify v1.9.0 // indirect
+	github.com/yuin/gopher-lua v1.1.1 // indirect
 	go.uber.org/atomic v1.6.0 // indirect
 	go.uber.org/multierr v1.5.0 // indirect
 	go.uber.org/zap v1.14.1 // indirect

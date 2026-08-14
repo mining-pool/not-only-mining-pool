@@ -109,6 +109,35 @@ Most GPU algorithms only have C implementations. Put the C source under
 from an `init()` behind a build tag, and build with `CGO_ENABLED=1 go build -tags
 <algo> ./cmd/nomp`. `neoscrypt` (`github.com/sparkspay/go-neoscrypt`) is a worked example.
 
+## Payments (PROP, fork-configurable)
+
+Set `disablePayment: false` and add a `payment` block to pay miners automatically.
+Rewards are split **proportionally to the shares each miner contributed to the
+round that found a block** (PROP): when a share solves a block the current round
+is sealed, and once the block's coinbase reaches maturity its reward is divided by
+share weight and paid via `sendmany`. Balances below `minPayment` carry over.
+
+```json
+"disablePayment": false,
+"payment": {
+  "interval": 600,           // seconds between payout runs
+  "minPayment": 0.05,        // min coin owed before a miner is paid (else carried over)
+  "daemon": 0,               // index into daemons[] used for wallet RPC
+  "magnitude": 0,            // base units per coin (1e8); 0 = auto-detect
+  "minConfirmations": 100,   // coinbase maturity before a reward is paid
+  "addressCheckMethod": "getaddressinfo", // or "validateaddress" on older forks
+  "sendManyDummy": "",       // leading sendmany arg (Bitcoin Core wants "")
+  "omitSendManyDummy": false // true if the fork's sendmany drops the leading arg
+}
+```
+
+The last four knobs let one binary pay out across bitcoind-family **forks** whose
+wallet RPC differs: coinbase maturity (`minConfirmations`), coin precision
+(`magnitude`), the address-ownership check (`addressCheckMethod`), and the
+`sendmany` shape (`sendManyDummy` / `omitSendManyDummy`). The payout wallet must
+own `poolAddress` (verified at startup). Miners are paid to their worker name, so
+they connect with their wallet address as the username.
+
 ## Add a category-C coin (an engine)
 
 Category-C coins are already supported by pluggable engines — you don't write one,

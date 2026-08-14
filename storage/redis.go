@@ -39,7 +39,6 @@ func NewStorage(coinName string, options *config.RedisOptions) *DB {
 
 func (s *DB) PutShare(share *types.Share, accepted bool) {
 	now := time.Now().Unix()
-	strNow := strconv.FormatInt(now, 10)
 
 	ppl := s.Pipeline()
 	ctx := context.Background()
@@ -50,7 +49,8 @@ func (s *DB) PutShare(share *types.Share, accepted bool) {
 
 	if share.ErrorCode == 0 {
 		log.Info("recording valid share")
-		ppl.HIncrByFloat(ctx, s.coin+":pool:contrib", share.Miner, share.Diff)
+		// current-round contribution, sealed to shares:round<height> on a block.
+		ppl.HIncrByFloat(ctx, s.coin+":shares:roundCurrent", share.Miner, share.Diff)
 		ppl.HIncrBy(ctx, s.coin+":miners:validShares", share.Miner, 1)
 
 		ppl.HIncrBy(ctx, s.coin+":pool", "validShares", 1)
@@ -84,14 +84,16 @@ func (s *DB) PutShare(share *types.Share, accepted bool) {
 		// share is valid but block from share can be also invalid
 		if accepted {
 			log.Warn("recording valid block")
-			ppl.Rename(ctx, s.coin+":pool:contrib", s.coin+":pool:contrib:"+strconv.FormatInt(share.BlockHeight, 10))
-			ppl.SAdd(ctx, s.coin+":blocks:pending", share.BlockHash)
-			ppl.HSetNX(ctx, s.coin+":blocks", share.BlockHash, strings.Join([]string{
-				share.TxHash,
-				strconv.FormatInt(share.BlockHeight, 10),
-				share.Miner,
-				strNow,
-			}, ":"))
+			// Seal the current round to shares:round<height> so the payer can pay
+			// exactly the miners who contributed to this block, and record the
+			// block as pending with the data the payer needs: hash (block id),
+			// txHash (coinbase, for gettransaction) and height (the round key).
+			ppl.Rename(ctx, s.coin+":shares:roundCurrent", s.coin+":shares:round"+strconv.FormatInt(share.BlockHeight, 10))
+			ppl.SAdd(ctx, s.coin+":blocks:pending", (&PendingBlock{
+				Hash:   share.BlockHash,
+				TxHash: share.TxHash,
+				Height: uint64(share.BlockHeight),
+			}).String())
 
 			ppl.HIncrBy(ctx, s.coin+":pool", "validBlocks", 1)
 		} else {
@@ -116,7 +118,7 @@ func (s *DB) GetRigIndex(minerName string) ([]string, error) {
 
 // GetCurrentRoundCount will return a total diff of shares the miner submitted
 func (s *DB) GetMinerCurrentRoundContrib(minerName string) (float64, error) {
-	return s.HGet(context.Background(), s.coin+":shares:contrib", minerName).Float64()
+	return s.HGet(context.Background(), s.coin+":shares:roundCurrent", minerName).Float64()
 }
 
 // GetMinerTotalShares will return the number of all valid shares
@@ -204,14 +206,39 @@ func (s *DB) GetMinerRigs(minerName string) (float64, error) {
 	return s.HGet(context.Background(), s.coin+":shares:contrib", minerName).Float64()
 }
 
-// ConfirmBlock alt one pending block to confirmed
-func (s *DB) ConfirmBlock(blockHash string) (ok bool, err error) {
-	return s.SMove(context.Background(), s.coin+":blocks:pending", s.coin+":blocks:confirmed", blockHash).Result()
+// PaymentUpdate is the atomic result of one payout run, applied by ApplyPayments
+// in a single redis pipeline so balances, payouts and block state never diverge.
+type PaymentUpdate struct {
+	Balances     map[string]float64 // miner -> new carried-over balance (coin), absolute
+	Paid         map[string]float64 // miner -> amount paid this run (coin), added to payouts
+	Confirmed    []string           // pending block strings moving to confirmed
+	Orphaned     []string           // pending block strings moving to orphaned
+	DeleteRounds []uint64           // sealed round heights whose shares are now accounted
 }
 
-// KickBlock alt one pending block to kicked
-func (s *DB) KickBlock(blockHash string) (ok bool, err error) {
-	return s.SMove(context.Background(), s.coin+":blocks:pending", s.coin+":blocks:kicked", blockHash).Result()
+// ApplyPayments persists one payout run atomically: it overwrites each miner's
+// carried-over balance, adds this run's payouts, moves settled blocks out of the
+// pending set, and drops the sealed rounds that were paid.
+func (s *DB) ApplyPayments(u *PaymentUpdate) error {
+	ctx := context.Background()
+	ppl := s.Pipeline()
+	for miner, bal := range u.Balances {
+		ppl.HSet(ctx, s.coin+":balances", miner, strconv.FormatFloat(bal, 'f', -1, 64))
+	}
+	for miner, paid := range u.Paid {
+		ppl.HIncrByFloat(ctx, s.coin+":payouts", miner, paid)
+	}
+	for _, b := range u.Confirmed {
+		ppl.SMove(ctx, s.coin+":blocks:pending", s.coin+":blocks:confirmed", b)
+	}
+	for _, b := range u.Orphaned {
+		ppl.SMove(ctx, s.coin+":blocks:pending", s.coin+":blocks:orphaned", b)
+	}
+	for _, h := range u.DeleteRounds {
+		ppl.Del(ctx, s.coin+":shares:round"+strconv.FormatUint(h, 10))
+	}
+	_, err := ppl.Exec(ctx)
+	return err
 }
 
 func (s *DB) GetAllMinerBalances() (map[string]float64, error) {
@@ -232,7 +259,7 @@ func (s *DB) GetAllMinerBalances() (map[string]float64, error) {
 }
 
 func (s *DB) GetAllPendingBlocks() ([]*PendingBlock, error) {
-	strBlocks, err := s.SMembers(context.Background(), s.coin+":pool:pending").Result()
+	strBlocks, err := s.SMembers(context.Background(), s.coin+":blocks:pending").Result()
 	if err != nil {
 		return nil, err
 	}

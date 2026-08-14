@@ -61,6 +61,17 @@
     "host": "0.0.0.0",
     "port": 20000
   },
+  "disablePayment": false,
+  "payment": {
+    "interval": 600,
+    "minPayment": 0.05,
+    "daemon": 0,
+    "magnitude": 0,
+    "minConfirmations": 100,
+    "addressCheckMethod": "getaddressinfo",
+    "sendManyDummy": "",
+    "omitSendManyDummy": false
+  },
   "storage": {
     "network": "tcp",
     "host": "127.0.0.1",
