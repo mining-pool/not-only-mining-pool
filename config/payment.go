@@ -44,6 +44,15 @@ type PaymentOptions struct {
 
 	Daemon int `json:"daemon"` // index into daemons[] used for wallet RPC (default 0)
 
+	// PayMode selects how a block's reward is attributed to miners:
+	//   "prop"  (default) proportional to that block's round shares
+	//   "pplns"           proportional to the last-N-difficulty window of shares
+	//   "solo"            the miner who found the block takes the whole reward
+	PayMode string `json:"payMode"`
+	// PPLNSWindow is the pplns look-back as a total share difficulty; <=0 falls
+	// back to the block's own round (so pplns degrades to prop).
+	PPLNSWindow float64 `json:"pplnsWindow"`
+
 	// --- coin-fork configurability ---
 
 	// Magnitude is the number of base units (satoshis) in one coin, e.g. 1e8 for
@@ -81,6 +90,17 @@ func (o *PaymentOptions) WithDefaults() *PaymentOptions {
 	if c.AddressCheckMethod == "" {
 		c.AddressCheckMethod = "getaddressinfo"
 	}
+	if c.PayMode == "" {
+		c.PayMode = PayModeProp
+	}
+	c.PayMode = strings.ToLower(c.PayMode)
 	// SendManyDummy defaults to "" (its zero value), which is what Bitcoin Core wants.
 	return &c
 }
+
+// Reward schemes selectable via PayMode.
+const (
+	PayModeProp  = "prop"
+	PayModePPLNS = "pplns"
+	PayModeSolo  = "solo"
+)

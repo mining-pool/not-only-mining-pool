@@ -109,13 +109,12 @@ Most GPU algorithms only have C implementations. Put the C source under
 from an `init()` behind a build tag, and build with `CGO_ENABLED=1 go build -tags
 <algo> ./cmd/nomp`. `neoscrypt` (`github.com/sparkspay/go-neoscrypt`) is a worked example.
 
-## Payments (PROP, fork-configurable)
+## Payments (configurable reward scheme, fork-configurable)
 
 Set `disablePayment: false` and add a `payment` block to pay miners automatically.
-Rewards are split **proportionally to the shares each miner contributed to the
-round that found a block** (PROP): when a share solves a block the current round
-is sealed, and once the block's coinbase reaches maturity its reward is divided by
-share weight and paid via `sendmany`. Balances below `minPayment` carry over.
+When a share solves a block the current round is sealed; once the block's coinbase
+reaches maturity its reward is attributed to miners per the selected `payMode` and
+paid via `sendmany`. Balances below `minPayment` carry over.
 
 ```json
 "disablePayment": false,
@@ -123,6 +122,8 @@ share weight and paid via `sendmany`. Balances below `minPayment` carry over.
   "interval": 600,           // seconds between payout runs
   "minPayment": 0.05,        // min coin owed before a miner is paid (else carried over)
   "daemon": 0,               // index into daemons[] used for wallet RPC
+  "payMode": "prop",         // "prop" | "pplns" | "solo"
+  "pplnsWindow": 0,          // pplns look-back as total share difficulty; 0 = the block's round
   "magnitude": 0,            // base units per coin (1e8); 0 = auto-detect
   "minConfirmations": 100,   // coinbase maturity before a reward is paid
   "addressCheckMethod": "getaddressinfo", // or "validateaddress" on older forks
@@ -131,7 +132,15 @@ share weight and paid via `sendmany`. Balances below `minPayment` carry over.
 }
 ```
 
-The last four knobs let one binary pay out across bitcoind-family **forks** whose
+**`payMode`** selects the reward scheme:
+- **`prop`** (default) — split the block reward proportionally to the shares of
+  the round that found it.
+- **`pplns`** — split proportionally to the last `pplnsWindow` difficulty of
+  shares across rounds (a sliding window; resists pool-hopping). `pplnsWindow: 0`
+  falls back to the block's own round.
+- **`solo`** — the miner who found the block takes the whole reward.
+
+The remaining knobs let one binary pay out across bitcoind-family **forks** whose
 wallet RPC differs: coinbase maturity (`minConfirmations`), coin precision
 (`magnitude`), the address-ownership check (`addressCheckMethod`), and the
 `sendmany` shape (`sendManyDummy` / `omitSendManyDummy`). The payout wallet must

@@ -41,13 +41,59 @@ func NewPaymentManager(options *config.PaymentOptions, poolAddr *config.Recipien
 	return pm
 }
 
-// Init validates the pool owns its payout address and fixes the coin precision.
-// It must be called (once) before Serve, only when payments are enabled.
+// Init validates the pay mode, the pool address ownership, and the coin
+// precision. It must be called (once) before Serve, only when payments are on.
 func (pm *PaymentManager) Init() error {
+	switch pm.options.PayMode {
+	case config.PayModeProp, config.PayModePPLNS, config.PayModeSolo:
+	default:
+		return fmt.Errorf("unsupported payMode %q (want %q, %q or %q)", pm.options.PayMode, config.PayModeProp, config.PayModePPLNS, config.PayModeSolo)
+	}
 	if err := pm.validatePoolAddress(); err != nil {
 		return err
 	}
 	return pm.setMagnitude()
+}
+
+// attribute splits a mature block's reward across miners per the configured
+// payMode, returning miner -> reward (satoshis). An empty result means the block
+// cannot be attributed (no shares / unknown finder) and should be orphaned.
+func (pm *PaymentManager) attribute(pb *storage.PendingBlock, rewardSat uint64) (map[string]uint64, error) {
+	switch pm.options.PayMode {
+	case config.PayModeSolo:
+		if pb.Finder == "" {
+			return nil, nil
+		}
+		return map[string]uint64{pb.Finder: rewardSat}, nil
+	case config.PayModePPLNS:
+		shares, err := pm.db.GetPPLNSShares(pb.Mark, pm.options.PPLNSWindow)
+		if err != nil {
+			return nil, err
+		}
+		return splitByShares(rewardSat, shares), nil
+	default: // prop
+		shares, err := pm.db.GetRoundContrib(pb.Height)
+		if err != nil {
+			return nil, err
+		}
+		return splitByShares(rewardSat, shares), nil
+	}
+}
+
+// splitByShares divides rewardSat proportionally to each miner's share weight.
+func splitByShares(rewardSat uint64, shares map[string]float64) map[string]uint64 {
+	var total float64
+	for _, s := range shares {
+		total += s
+	}
+	if total <= 0 {
+		return nil
+	}
+	out := make(map[string]uint64, len(shares))
+	for miner, s := range shares {
+		out[miner] = uint64(math.Floor(float64(rewardSat) * (s / total)))
+	}
+	return out
 }
 
 func (pm *PaymentManager) Serve() {
@@ -160,29 +206,25 @@ func (pm *PaymentManager) processPayments() error {
 		case category == string(storage.Immature) || confirmations < pm.options.MinConfirmations:
 			// not mature yet — leave it pending, we'll revisit next run
 		default: // generate / mature
-			shares, err := pm.db.GetRoundContrib(pb.Height)
+			rewardSat := pm.CoinToSat(reward)
+			dist, err := pm.attribute(pb, rewardSat)
 			if err != nil {
 				return err
 			}
-			var total float64
-			for _, s := range shares {
-				total += s
-			}
-			if total <= 0 {
-				// block matured but no recorded shares to pay: orphan it so we
-				// don't leak the reward or loop forever.
+			if len(dist) == 0 {
+				// matured but nothing to attribute (no shares / unknown finder):
+				// orphan it so we don't leak the reward or loop forever.
 				update.Orphaned = append(update.Orphaned, pb.String())
 				update.DeleteRounds = append(update.DeleteRounds, pb.Height)
 				continue
 			}
-			rewardSat := pm.CoinToSat(reward)
-			for miner, share := range shares {
+			for miner, r := range dist {
 				w := workers[miner]
 				if w == nil {
 					w = &worker{Address: miner}
 					workers[miner] = w
 				}
-				w.Reward += uint64(math.Floor(float64(rewardSat) * (share / total)))
+				w.Reward += r
 			}
 			matured = append(matured, matureBlock{block: pb, reward: rewardSat})
 		}

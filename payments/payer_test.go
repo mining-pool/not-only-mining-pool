@@ -140,13 +140,29 @@ func splitHostPort(addr string) (host, port string) {
 	return addr, ""
 }
 
-// seedRound writes a sealed round + its pending block, as PutShare would.
-func (h *harness) seedRound(height uint64, txHash string, shares map[string]float64) {
+// seedRoundShares writes a sealed round's per-miner contribution.
+func (h *harness) seedRoundShares(height uint64, shares map[string]float64) {
 	for miner, diff := range shares {
 		h.mr.HSet("TEST:shares:round"+strconv.FormatUint(height, 10), miner, strconv.FormatFloat(diff, 'f', -1, 64))
 	}
-	pb := &storage.PendingBlock{Hash: "blk" + strconv.FormatUint(height, 10), TxHash: txHash, Height: height}
+}
+
+// seedPending records a pending block (with optional finder / pplns mark).
+func (h *harness) seedPending(height uint64, txHash, finder string, mark int64) {
+	pb := &storage.PendingBlock{Hash: "blk" + strconv.FormatUint(height, 10), TxHash: txHash, Height: height, Finder: finder, Mark: mark}
 	h.mr.SAdd("TEST:blocks:pending", pb.String())
+}
+
+// seedRound seals a round + its pending block, as PutShare would (prop mode).
+func (h *harness) seedRound(height uint64, txHash string, shares map[string]float64) {
+	h.seedRoundShares(height, shares)
+	h.seedPending(height, txHash, "", 0)
+}
+
+// seedPPLNS appends one share to the pplns log at a monotonic sequence.
+func (h *harness) seedPPLNS(miner string, diff float64, seq int64) {
+	h.mr.ZAdd("TEST:shares:pplnslog", float64(seq),
+		miner+":"+strconv.FormatFloat(diff, 'f', -1, 64)+":"+strconv.FormatInt(seq, 10))
 }
 
 func generateTx(confirmations int, reward float64) func(string) (*daemons.GetTransaction, *daemons.JsonRpcError) {
@@ -268,6 +284,64 @@ func TestPayout_BelowMinPaymentCarriesOver(t *testing.T) {
 	}
 }
 
+// --- pay modes ---
+
+func TestPayout_Solo(t *testing.T) {
+	h := newHarness(t, &config.PaymentOptions{MinPayment: 0, MinConfirmations: 100, PayMode: "solo"})
+	if err := h.pm.Init(); err != nil {
+		t.Fatal(err)
+	}
+	// round shares exist for other miners, but solo pays only the block finder.
+	h.seedRoundShares(300, map[string]float64{"minerA": 90, "minerB": 10})
+	h.seedPending(300, "tx300", "minerFinder", 0)
+	h.wallet.gettx = generateTx(120, 50.0)
+	h.wallet.sendmany = func(_ bool, amounts map[string]float64) (string, *daemons.JsonRpcError) {
+		if amounts["minerFinder"] != 50.0 {
+			t.Errorf("solo finder payout = %v, want 50", amounts["minerFinder"])
+		}
+		if _, ok := amounts["minerA"]; ok {
+			t.Errorf("solo must not pay non-finders")
+		}
+		return "txid", nil
+	}
+	if err := h.pm.processPayments(); err != nil {
+		t.Fatal(err)
+	}
+	if v := h.mr.HGet("TEST:payouts", "minerFinder"); v != "50" {
+		t.Errorf("finder payout = %q, want 50", v)
+	}
+}
+
+func TestPayout_PPLNS(t *testing.T) {
+	h := newHarness(t, &config.PaymentOptions{MinPayment: 0, MinConfirmations: 100, PayMode: "pplns", PPLNSWindow: 40})
+	if err := h.pm.Init(); err != nil {
+		t.Fatal(err)
+	}
+	// pplns log (seq → miner:diff): A older, then B, then C. Window=40 looks back
+	// from the block mark (seq 6): seq 6,5 (C,C) + 4,3 (B,B) = 40 → {B:20,C:20};
+	// minerA's older shares fall outside the window and get nothing.
+	for _, e := range []struct {
+		miner string
+		seq   int64
+	}{{"minerA", 1}, {"minerA", 2}, {"minerB", 3}, {"minerB", 4}, {"minerC", 5}, {"minerC", 6}} {
+		h.seedPPLNS(e.miner, 10, e.seq)
+	}
+	h.seedPending(301, "tx301", "minerC", 6) // block found at seq 6
+	h.wallet.gettx = generateTx(120, 40.0)   // reward 40 -> B:20, C:20
+	h.wallet.sendmany = func(_ bool, amounts map[string]float64) (string, *daemons.JsonRpcError) {
+		if amounts["minerB"] != 20.0 || amounts["minerC"] != 20.0 {
+			t.Errorf("pplns window split wrong: %v", amounts)
+		}
+		if _, ok := amounts["minerA"]; ok {
+			t.Errorf("minerA is outside the pplns window and must not be paid")
+		}
+		return "txid", nil
+	}
+	if err := h.pm.processPayments(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // --- fork configurability ---
 
 func TestForkConfig_ValidateAddressAndNoDummy(t *testing.T) {
@@ -301,7 +375,7 @@ func TestForkConfig_ValidateAddressAndNoDummy(t *testing.T) {
 
 func TestPaymentOptionsDefaults(t *testing.T) {
 	got := (&config.PaymentOptions{}).WithDefaults()
-	if got.Interval != 600 || got.MinConfirmations != 100 || got.AddressCheckMethod != "getaddressinfo" {
+	if got.Interval != 600 || got.MinConfirmations != 100 || got.AddressCheckMethod != "getaddressinfo" || got.PayMode != "prop" {
 		t.Errorf("unexpected defaults: %+v", got)
 	}
 	if got.SendManyDummy != "" || got.OmitSendManyDummy {

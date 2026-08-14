@@ -66,6 +66,8 @@
     "interval": 600,
     "minPayment": 0.05,
     "daemon": 0,
+    "payMode": "prop",
+    "pplnsWindow": 0,
     "magnitude": 0,
     "minConfirmations": 100,
     "addressCheckMethod": "getaddressinfo",

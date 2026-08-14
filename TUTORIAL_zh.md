@@ -136,11 +136,10 @@ go build ./cmd/nomp
 
 ---
 
-## 3.5 付款（PROP，可配置支持各币 fork）
+## 3.5 付款（可配置奖励方案，可配置支持各币 fork）
 
-设 `disablePayment: false` 并加 `payment` 配置块即可自动给矿工付款。奖励按**各矿工在出块那一轮
-贡献的 share 比例**分配（PROP）：share 打出块时封存当前轮，待该块 coinbase 成熟后按 share 权重
-分账、经 `sendmany` 发出；不足 `minPayment` 的余额结转下轮。
+设 `disablePayment: false` 并加 `payment` 配置块即可自动给矿工付款。share 打出块时封存当前轮，
+待该块 coinbase 成熟后按 `payMode` 选定的方案分账、经 `sendmany` 发出；不足 `minPayment` 的余额结转下轮。
 
 ```json
 "disablePayment": false,
@@ -148,6 +147,8 @@ go build ./cmd/nomp
   "interval": 600,           // 每轮付款间隔（秒）
   "minPayment": 0.05,        // 达到多少币才付（否则结转）
   "daemon": 0,               // 用 daemons[] 中第几个做钱包 RPC
+  "payMode": "prop",         // "prop" | "pplns" | "solo"
+  "pplnsWindow": 0,          // pplns 回看窗口（按 share 总难度）；0 = 用该块所在轮
   "magnitude": 0,            // 每币的最小单位数（1e8）；0 = 自动探测
   "minConfirmations": 100,   // coinbase 成熟确认数（付款前需达到）
   "addressCheckMethod": "getaddressinfo", // 老 fork 用 "validateaddress"
@@ -156,7 +157,12 @@ go build ./cmd/nomp
 }
 ```
 
-后四个开关让**一份二进制**适配各 bitcoind 系 fork 的钱包差异：成熟确认数
+**`payMode`** 选奖励方案：
+- **`prop`**（默认）——按**出块那一轮**各矿工的 share 比例分；
+- **`pplns`**——按跨轮的**最近 `pplnsWindow` 难度**的 share 滑动窗口比例分（抗跳池）；`pplnsWindow: 0` 退化为该块所在轮；
+- **`solo`**——打出块的矿工独得全部奖励。
+
+其余开关让**一份二进制**适配各 bitcoind 系 fork 的钱包差异：成熟确认数
 （`minConfirmations`）、币精度（`magnitude`）、地址归属校验方法（`addressCheckMethod`）、
 `sendmany` 形态（`sendManyDummy` / `omitSendManyDummy`）。付款钱包必须拥有 `poolAddress`
 （启动时校验）；矿工按其 worker 名收款，故矿工连接时用户名填钱包地址。

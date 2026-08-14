@@ -14,6 +14,10 @@ import (
 
 var log = logging.Logger("storage")
 
+// pplnsLogCap bounds the PPLNS share log (a ZSet of recent shares) so it can
+// never grow without limit; the oldest entries are trimmed as new ones arrive.
+const pplnsLogCap = 200000
+
 type DB struct {
 	*redis.Client
 	coin string
@@ -47,8 +51,18 @@ func (s *DB) PutShare(share *types.Share, accepted bool) {
 	ppl.SAdd(ctx, s.coin+":pool:miners", share.Miner)              // miner index
 	ppl.SAdd(ctx, s.coin+":miner:"+share.Miner+":rigs", share.Rig) // rig index
 
+	var seq int64
 	if share.ErrorCode == 0 {
 		log.Info("recording valid share")
+		// PPLNS log: append this share to a capped, monotonically-scored ZSet so a
+		// block can pay the last-N-difficulty window across rounds. seq is fetched
+		// synchronously so it can also mark the block's window upper bound.
+		seq, _ = s.Incr(ctx, s.coin+":shares:seq").Result()
+		ppl.ZAdd(ctx, s.coin+":shares:pplnslog", &redis.Z{
+			Score:  float64(seq),
+			Member: share.Miner + ":" + strconv.FormatFloat(share.Diff, 'f', -1, 64) + ":" + strconv.FormatInt(seq, 10),
+		})
+		ppl.ZRemRangeByRank(ctx, s.coin+":shares:pplnslog", 0, -(pplnsLogCap + 1))
 		// current-round contribution, sealed to shares:round<height> on a block.
 		ppl.HIncrByFloat(ctx, s.coin+":shares:roundCurrent", share.Miner, share.Diff)
 		ppl.HIncrBy(ctx, s.coin+":miners:validShares", share.Miner, 1)
@@ -93,6 +107,8 @@ func (s *DB) PutShare(share *types.Share, accepted bool) {
 				Hash:   share.BlockHash,
 				TxHash: share.TxHash,
 				Height: uint64(share.BlockHeight),
+				Finder: share.Miner, // solo payMode
+				Mark:   seq,         // pplns window upper bound
 			}).String())
 
 			ppl.HIncrBy(ctx, s.coin+":pool", "validBlocks", 1)
@@ -275,6 +291,39 @@ func (s *DB) GetAllPendingBlocks() ([]*PendingBlock, error) {
 	}
 
 	return blocks, nil
+}
+
+// GetPPLNSShares returns per-miner share difficulty over the last-N window
+// ending at uptoSeq: it walks the PPLNS log backward from that mark, summing
+// difficulty per miner until the cumulative difficulty reaches window (window<=0
+// means no cap, bounded only by the log's own size).
+func (s *DB) GetPPLNSShares(uptoSeq int64, window float64) (map[string]float64, error) {
+	members, err := s.ZRevRangeByScore(context.Background(), s.coin+":shares:pplnslog", &redis.ZRangeBy{
+		Min: "-inf",
+		Max: strconv.FormatInt(uptoSeq, 10),
+	}).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(map[string]float64)
+	var cum float64
+	for _, m := range members {
+		p := strings.SplitN(m, ":", 3) // miner:diff:seq
+		if len(p) < 2 {
+			continue
+		}
+		diff, err := strconv.ParseFloat(p[1], 64)
+		if err != nil {
+			continue
+		}
+		out[p[0]] += diff
+		cum += diff
+		if window > 0 && cum >= window {
+			break
+		}
+	}
+	return out, nil
 }
 
 func (s *DB) GetRoundContrib(height uint64) (map[string]float64, error) {
