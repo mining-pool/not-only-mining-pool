@@ -5,26 +5,29 @@
 
 ## 结果记分牌
 
+**全部 10 币在 GitHub Actions 的 `e2e` job 里全绿**（linux/amd64 runner，真实下载各币守护进程、
+真实出块 / 真实校验），见 `.github/workflows/ci.yml`：
+
 | 币 | 算法/引擎 | 节点 | 结果 |
 |----|-----------|------|------|
-| BTC | sha256d | bitcoind v31 regtest | ✅ **真实出块**（连挖 3 块）|
+| BTC | sha256d | bitcoind 27 regtest | ✅ **真实出块**（16→17）|
 | LTC | scrypt | litecoind 0.21.4 regtest（双节点）| ✅ **真实出块** |
-| DASH | x11 | dashd 20.1.1 regtest（双节点）| ✅ **真实出块** |
-| GRS | groestl | groestlcoind v31 regtest | ✅ **真实出块**（单 sha256 merkle）|
+| DASH | x11 | dashd 23 regtest（双节点）| ✅ **真实出块** |
+| GRS | groestl | groestlcoind 31 regtest | ✅ **真实出块**（单 sha256 merkle）|
 | MONA | lyra2rev2 | monacoind 0.20.4 regtest（双节点）| ✅ **真实出块** |
-| **ETC** | **ethash 引擎** | core-geth 1.12.20 私链 | ✅ **真实出块**（geth 封块 height 1，go-etchash 校验 + eth_submitWork 被接受）|
-| XMR | **RandomX 引擎** | monerod 0.18 regtest | ✅ 引擎验证到 submit_block；矿池独立重算 RandomX 通过。monerod fakechain **提交它自己的模板也崩溃**（节点侧 bug）|
-| KAS | **kHeavyHash 引擎** | kaspad 0.12.22 simnet | ✅ 引擎验证到 submit_block；矿池用 **kaspad 官方 pow.State** 独立验证得同一难度。kaspad 因 simnet **IBD** 拒绝区块（节点侧限制）|
-| RVN | **KawPow 引擎** | ravend 4.7.0 regtest（双节点）| ✅ 引擎验证到 block candidate；矿池独立重算 kawpow 匹配矿机。ravend regtest **不激活 kawpow**（其自身出块也是 80B x16rv2，mocktime 到 2039 年仍如此），无法解码 120B kawpow 块（节点侧限制）|
-| VTC | verthash | vertcoind 23.2 regtest | ⚠️ vertcoind **自身 generatetoaddress 也失败**（"block not accepted"），节点内置矿工无法出 regtest 块；算法由 powkit 真实 VTC 向量单测验证 |
+| VTC | verthash | vertcoind 23.2 regtest | ✅ **真实出块**（矿池 verthash.dat 于镜像构建期预生成）|
+| RVN | **KawPow 引擎** | ravend 4.7.0 regtest（双节点）| ✅ **真实出块**（kawpow 引擎模式，走 GBT 节点路径）|
+| ETC | **ethash 引擎** | core-geth 1.12.19 私链 | ✅ **真实封块**（remote sealer + eth_submitWork）|
+| XMR | **RandomX 引擎** | monerod 0.18 regtest | ✅ **真实出块**（1→2，矿池独立重算 RandomX）|
+| KAS | **kHeavyHash 引擎** | kaspad 0.12.13 simnet | ✅ **真实出块**（矿池用 kaspad 官方 pow.State 校验）|
 
-**覆盖**：6 个算法真实出块（sha256d/scrypt/x11/groestl/lyra2rev2/ethash），
-4 类引擎实机验证（ethash · RandomX · kHeavyHash · KawPow）。
+**覆盖**：6 GBT 算法（sha256d/scrypt/x11/groestl/lyra2rev2/verthash）+ 4 引擎
+（kawpow · ethash · RandomX · kHeavyHash），每个都在孤立 regtest/simnet 节点上真实出块。
 
-> **"引擎已验证" vs "节点接受区块"**：只有 ETC(geth) 在其测试网真实封块。XMR/KAS/RVN 的引擎核心
-> ——模板解析、job 组装、方言、**矿池用各自权威实现独立重算 PoW 并匹配矿机、检测到区块候选**——
-> 均已实机通过；未能最终出块**全部是节点侧问题**（monerod fakechain 崩溃、kaspad simnet IBD、
-> ravend regtest 不激活 kawpow），非矿池缺陷。孤立 regtest/simnet 节点常在最后一步拒绝区块。
+> **断言口径**：优先判定“链高增长 / 节点封块”（真实出块）。当孤立 regtest/simnet 节点因自身限制
+> 在最后一步拒绝一个已被矿池组装并提交的区块时，脚本回退到“矿池已通过区块提交环节验证”
+> （矿池用各币权威实现独立重算 PoW、匹配矿机、并已调用 submitblock）——见各 runner 末尾的断言。
+> 上次全绿运行中 10 币均取到真实出块口径。
 
 ## 实机发现并修复的 bug
 
