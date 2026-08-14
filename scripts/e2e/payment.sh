@@ -76,7 +76,9 @@ addr,rpc,sport,d,coin,mode=sys.argv[1:7]
 pay={"interval":4,"minPayment":0,"daemon":0,"payMode":mode,"pplnsWindow":0,"ppsRate":0,
      "magnitude":1e8,"minConfirmations":1,"addressCheckMethod":"getaddressinfo",
      "sendManyDummy":"","omitSendManyDummy":False}
-if mode=="pps": pay["ppsRate"]=100   # coin per share-difficulty; block reward funds the wallet
+# pps pays per share-difficulty immediately; keep the rate tiny so the many
+# low-vardiff shares the e2eminer logs stay well under the wallet's balance.
+if mode=="pps": pay["ppsRate"]=0.001
 c={"coin":{"name":coin,"symbol":"BTC"},"algorithm":{"name":"sha256d","multiplier":0,"sha256dBlockHasher":True},
  "disablePayment":False,"payment":pay,
  "poolAddress":{"address":addr,"type":"p2pkh"},"rewardRecipients":[],

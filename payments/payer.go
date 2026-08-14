@@ -211,9 +211,11 @@ func (pm *PaymentManager) processPayments() error {
 		case category == string(storage.Orphan) || category == string(storage.Kicked):
 			update.Orphaned = append(update.Orphaned, pb.String())
 			update.DeleteRounds = append(update.DeleteRounds, pb.Height)
-		case category == string(storage.Immature) || confirmations < pm.options.MinConfirmations:
-			// not mature yet — leave it pending, we'll revisit next run
-		default: // generate / mature
+		case confirmations < pm.options.MinConfirmations:
+			// fewer than minConfirmations — leave it pending, revisit next run. An
+			// "immature" coinbase is just a young one; sendmany funds payouts from
+			// any mature wallet UTXO, so minConfirmations alone governs distribution.
+		default: // enough confirmations — distribute
 			rewardSat := pm.CoinToSat(reward)
 			dist, err := pm.attribute(pb, rewardSat)
 			if err != nil {
@@ -304,8 +306,8 @@ func (pm *PaymentManager) processPPS() error {
 		case category == string(storage.Orphan) || category == string(storage.Kicked):
 			update.Orphaned = append(update.Orphaned, pb.String())
 			update.DeleteRounds = append(update.DeleteRounds, pb.Height)
-		case category == string(storage.Immature) || confirmations < pm.options.MinConfirmations:
-			// leave pending until mature
+		case confirmations < pm.options.MinConfirmations:
+			// fewer than minConfirmations — leave pending until mature
 		default:
 			update.Confirmed = append(update.Confirmed, pb.String())
 			update.DeleteRounds = append(update.DeleteRounds, pb.Height)
