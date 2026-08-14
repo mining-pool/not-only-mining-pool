@@ -384,7 +384,13 @@ func (pm *PaymentManager) settle(workers map[string]*worker, update *storage.Pay
 		}
 		if result.Error != nil {
 			if result.Error.Code == -6 { // not enough funds to also cover the fee
-				next := withhold + 0.01
+				// Geometric back-off: a gentle 1% first step covers the common case
+				// (only the tx fee is missing), then double so a large shortfall
+				// converges in a bounded number of retries instead of ~100.
+				next := withhold * 2
+				if next < 0.01 {
+					next = 0.01
+				}
 				if next >= 1 {
 					return fmt.Errorf("wallet cannot cover sendmany fees even at 100%% withholding")
 				}
