@@ -33,10 +33,14 @@ sleep 8   # gRPC listener warmup; the engine polls once at Init.
 kill -0 $KASPAD_PID 2>/dev/null || { fail "$SYM: kaspad exited on startup"; tail -20 "$DIR/node.log"; exit 1; }
 
 # --- mint a simnet pay-to address via kaspawallet ---------------------------
+# kaspawallet create prompts for the password on a tty; an empty --password is
+# treated as unset and it panics reading a non-existent terminal. A non-empty
+# password (with --yes to skip the mnemonic confirmation) keeps it headless.
 KEYS="$DIR/keys.json"
+WPASS="kaspae2e"
 log "$SYM: creating a simnet wallet"
-yes '' | with_timeout 40 "$KASPAWALLET" --simnet create --password "" --keys-file "$KEYS" --yes >"$DIR/wallet-create.log" 2>&1 || true
-"$KASPAWALLET" --simnet start-daemon --keys-file "$KEYS" --password "" \
+with_timeout 40 "$KASPAWALLET" --simnet create --password "$WPASS" --keys-file "$KEYS" --yes >"$DIR/wallet-create.log" 2>&1 || true
+"$KASPAWALLET" --simnet start-daemon --keys-file "$KEYS" --password "$WPASS" \
   --listen 127.0.0.1:$WPORT --rpcserver 127.0.0.1:$RPCPORT >"$DIR/walletd.log" 2>&1 &
 WALLETD_PID=$!
 sleep 4

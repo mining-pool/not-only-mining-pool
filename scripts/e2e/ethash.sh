@@ -25,16 +25,20 @@ GETH_PID=""
 trap 'kill -9 $GETH_PID 2>/dev/null; pkill -9 -f "$DIR/pool" 2>/dev/null; cleanup' EXIT
 
 # --- genesis: ethash, all forks at 0, trivial difficulty --------------------
+# London (EIP-1559) must be enabled with a genesis baseFeePerGas, otherwise
+# core-geth's blob-pool init calls CalcBaseFee with nil London params and panics
+# at startup (before it can serve eth_getWork).
 cat > "$DIR/genesis.json" <<EOF
 {
   "config": {
     "chainId": 1337,
     "homesteadBlock": 0, "eip150Block": 0, "eip155Block": 0, "eip158Block": 0,
     "byzantiumBlock": 0, "constantinopleBlock": 0, "petersburgBlock": 0,
-    "istanbulBlock": 0, "ethash": {}
+    "istanbulBlock": 0, "berlinBlock": 0, "londonBlock": 0, "ethash": {}
   },
   "difficulty": "0x1",
   "gasLimit": "0x2fefd8",
+  "baseFeePerGas": "0x3b9aca00",
   "alloc": {}
 }
 EOF
