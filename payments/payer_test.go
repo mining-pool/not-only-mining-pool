@@ -48,7 +48,7 @@ func (w *fakeWallet) handler(rw http.ResponseWriter, r *http.Request) {
 		w.mu.Lock()
 		w.AddrMethod = req.Method
 		w.mu.Unlock()
-		result = map[string]interface{}{"ismine": true, "isvalid": true, "address": req.Params[0]}
+		result = map[string]interface{}{"ismine": true, "isvalid": true, "address": req.Params[0], "labels": []string{""}}
 	case "getbalance":
 		// getbalance returns a bare number; emit it raw.
 		writeRPC(rw, req.Id, json.RawMessage(w.balance), nil)

@@ -32,10 +32,9 @@ type ValidateAddress struct {
 	Hdkeypath     string   `json:"hdkeypath"`
 	Hdseedid      string   `json:"hdseedid"`
 	Hdmasterkeyid string   `json:"hdmasterkeyid"`
-	Labels        []struct {
-		Name    string `json:"name"`
-		Purpose string `json:"purpose"`
-	} `json:"labels"`
+	// Bitcoin Core changed "labels" from an array of {name,purpose} objects to an
+	// array of plain strings; accept either so getaddressinfo parses on any fork.
+	Labels []interface{} `json:"labels"`
 }
 
 func BytesToValidateAddress(b []byte) (*ValidateAddress, error) {
