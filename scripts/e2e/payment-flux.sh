@@ -28,7 +28,7 @@ cli()  { "$CLI" -regtest -datadir="$DIR" -rpcport=$RPCPORT -rpcuser=u -rpcpasswo
 w()    { cli "$@"; }   # fluxd uses a single default wallet
 trap 'cli stop >/dev/null 2>&1; pkill -9 -f "$DIR/pool" 2>/dev/null; "$CLI" -datadir="$DIR2" -rpcport=$P2 -rpcuser=u -rpcpassword=p stop >/dev/null 2>&1; cleanup' EXIT
 
-mkconf() { cat > "$1/node.conf" <<EOF
+mkconf() { cat > "$1/flux.conf" <<EOF
 regtest=1
 server=1
 rpcuser=u
@@ -43,9 +43,9 @@ rpcflags() { echo "-rpcport=$1 -port=$2 -rpcuser=u -rpcpassword=p -rpcallowip=12
 
 log "$SYM: starting fluxd regtest (2 nodes for GBT)"
 mkconf "$DIR" $RPCPORT $P1
-"$DAEMON" -datadir="$DIR" -conf="$DIR/node.conf" $(rpcflags $RPCPORT $P1) -listen -daemon >"$DIR/node.log" 2>&1
+"$DAEMON" -datadir="$DIR" -conf="$DIR/flux.conf" $(rpcflags $RPCPORT $P1) -listen -daemon >"$DIR/node.log" 2>&1
 mkconf "$DIR2" $P2 $((P1+1))
-"$DAEMON" -datadir="$DIR2" -conf="$DIR2/node.conf" $(rpcflags $P2 $((P1+1))) -connect=127.0.0.1:$P1 -daemon >"$DIR2/node.log" 2>&1
+"$DAEMON" -datadir="$DIR2" -conf="$DIR2/flux.conf" $(rpcflags $P2 $((P1+1))) -connect=127.0.0.1:$P1 -daemon >"$DIR2/node.log" 2>&1
 for i in $(seq 1 150); do cli getblockcount >/dev/null 2>&1 && break; sleep 1; done
 if ! cli getblockcount >/dev/null 2>&1; then
   fail "$SYM: node did not come up"
