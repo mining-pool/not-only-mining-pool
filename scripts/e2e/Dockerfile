@@ -13,7 +13,7 @@
 FROM golang:1.24-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      redis-server ca-certificates curl jq python3 unzip xxd bzip2 \
+      redis-server ca-certificates curl jq python3 unzip xxd bzip2 lsof \
       cmake build-essential git \
     && rm -rf /var/lib/apt/lists/*
 

@@ -190,8 +190,10 @@ func (sc *Client) HandleAuthorize(message *daemons.JsonRpcRequest, replyToSocket
 		log.Warn("malformed mining.authorize params from ", sc.GetLabel())
 		return
 	}
-	sc.WorkerName = string(authParams[0])
-	sc.WorkerPass = string(authParams[1])
+	// Decode the JSON string values (RawMessage keeps the surrounding quotes);
+	// this matches how the engine path parses the worker name.
+	sc.WorkerName = utils.RawJsonToString(authParams[0])
+	sc.WorkerPass = utils.RawJsonToString(authParams[1])
 
 	authorized, disconnect, err := sc.AuthorizeFn(sc.RemoteAddress, sc.Socket.LocalAddr().(*net.TCPAddr).Port, sc.WorkerName, sc.WorkerPass)
 	sc.IsAuthorized = err == nil && authorized

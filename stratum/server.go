@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"net"
 	"strconv"
+	"sync"
 	"time"
 
 	logging "github.com/ipfs/go-log/v2"
@@ -28,6 +29,7 @@ type Server struct {
 	VarDiff             *vardiff.VarDiff
 	JobManager          *jobs.JobManager
 	StratumClients      map[uint64]*Client
+	clientsMu           sync.RWMutex // guards StratumClients
 	SubscriptionCounter *SubscriptionCounter
 	BanningManager      *bans.BanningManager
 
@@ -128,7 +130,9 @@ func (ss *Server) HandleNewClient(socket net.Conn) []byte {
 	subscriptionID := ss.SubscriptionCounter.Next()
 	client := NewStratumClient(subscriptionID, socket, ss.Options, ss.JobManager, ss.BanningManager)
 	client.Engine = ss.Engine
+	ss.clientsMu.Lock()
 	ss.StratumClients[binary.LittleEndian.Uint64(subscriptionID)] = client
+	ss.clientsMu.Unlock()
 	// client.connected
 
 	go func() {
@@ -145,10 +149,29 @@ func (ss *Server) HandleNewClient(socket net.Conn) []byte {
 	return subscriptionID
 }
 
+// snapshotClients returns the current clients under a read lock, so broadcasts
+// can iterate (and do network I/O per client) without holding the lock while
+// other goroutines add/remove entries.
+func (ss *Server) snapshotClients() []*Client {
+	ss.clientsMu.RLock()
+	defer ss.clientsMu.RUnlock()
+	clients := make([]*Client, 0, len(ss.StratumClients))
+	for _, c := range ss.StratumClients {
+		clients = append(clients, c)
+	}
+	return clients
+}
+
+func (ss *Server) clientBySubscriptionId(subscriptionId []byte) *Client {
+	ss.clientsMu.RLock()
+	defer ss.clientsMu.RUnlock()
+	return ss.StratumClients[binary.LittleEndian.Uint64(subscriptionId)]
+}
+
 func (ss *Server) BroadcastCurrentMiningJob(jobParams []interface{}) {
 	log.Info("broadcasting job params")
-	for clientId := range ss.StratumClients {
-		ss.StratumClients[clientId].SendMiningJob(jobParams)
+	for _, c := range ss.snapshotClients() {
+		c.SendMiningJob(jobParams)
 	}
 }
 
@@ -156,8 +179,7 @@ func (ss *Server) BroadcastCurrentMiningJob(jobParams []interface{}) {
 // at its own difficulty/target.
 func (ss *Server) BroadcastEngineWork() {
 	log.Info("broadcasting engine work")
-	for clientId := range ss.StratumClients {
-		c := ss.StratumClients[clientId]
+	for _, c := range ss.snapshotClients() {
 		if c.IsAuthorized {
 			c.sendEngineWork()
 		}
@@ -165,13 +187,17 @@ func (ss *Server) BroadcastEngineWork() {
 }
 
 func (ss *Server) RemoveStratumClientBySubscriptionId(subscriptionId []byte) {
+	ss.clientsMu.Lock()
 	delete(ss.StratumClients, binary.LittleEndian.Uint64(subscriptionId))
+	ss.clientsMu.Unlock()
 }
 
 func (ss *Server) ManuallyAddStratumClient(client *Client) {
 	subscriptionId := ss.HandleNewClient(client.Socket)
 	if subscriptionId != nil {
-		ss.StratumClients[binary.LittleEndian.Uint64(subscriptionId)].ManuallyAuthClient(client.WorkerName, client.WorkerPass)
-		ss.StratumClients[binary.LittleEndian.Uint64(subscriptionId)].ManuallySetValues(client)
+		if c := ss.clientBySubscriptionId(subscriptionId); c != nil {
+			c.ManuallyAuthClient(client.WorkerName, client.WorkerPass)
+			c.ManuallySetValues(client)
+		}
 	}
 }
