@@ -87,7 +87,7 @@ log "$SYM: pool up"
 
 H0=$(blockcount)
 # RandomX seeds its dataset on both sides on first run (slow); allow time.
-"$DIR/miner" -pool 127.0.0.1:$SPORT -login "$ADDR" -nonceoff 39 >"$DIR/miner.log" 2>&1
+with_timeout 300 "$DIR/miner" -pool 127.0.0.1:$SPORT -login "$ADDR" -nonceoff 39 >"$DIR/miner.log" 2>&1
 sleep 3
 H1=$(blockcount)
 if [ "${H1:-0}" -gt "${H0:-0}" ] || grep -q "cryptonote block candidate" "$DIR/pool.log"; then

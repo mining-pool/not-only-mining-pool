@@ -89,7 +89,7 @@ log "$SYM: pool up"
 H0=$(blocknum)
 # The miner generates the epoch-0 light cache on first run (a few seconds); geth
 # generates its verification DAG on submit. Give it a generous window.
-"$DIR/miner" -pool 127.0.0.1:$SPORT -geth "http://127.0.0.1:$RPCPORT" -login "$ETHERBASE" >"$DIR/miner.log" 2>&1
+with_timeout 300 "$DIR/miner" -pool 127.0.0.1:$SPORT -geth "http://127.0.0.1:$RPCPORT" -login "$ETHERBASE" >"$DIR/miner.log" 2>&1
 sleep 3
 H1=$(blocknum)
 if [ "${H1:-0}" -gt "${H0:-0}" ] || grep -q "ethash block sealed" "$DIR/pool.log"; then

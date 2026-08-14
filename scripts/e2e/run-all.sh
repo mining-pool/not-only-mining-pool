@@ -50,19 +50,24 @@ want() { # <sym> — honour the coin filter
   printf '%s\n' "${FILTER[@]}" | grep -qiw "$1"
 }
 
+# Per-coin wall-clock backstop: covers VTC's ~400s node warmup + verthash while
+# still killing any coin whose daemon/miner wedges. Individual blocking calls
+# inside the runners have their own tighter timeouts.
+COIN_CAP=900
+
 FILTER=("$@")
 for c in "${GBT_COINS[@]}"; do
   read -r _ sym _ <<<"$c"
   want "$sym" || continue
   echo "================ $sym ================"
-  record "$sym" "$(bash "$HERE/gbt.sh" $c 2>&1)"
+  record "$sym" "$(with_timeout $COIN_CAP bash "$HERE/gbt.sh" $c 2>&1)"
 done
 
 for e in "${ENGINE_COINS[@]}"; do
   read -r sym script rpcport sport <<<"$e"
   want "$sym" || continue
   echo "================ $sym ================"
-  record "$sym" "$(bash "$HERE/$script" "$rpcport" "$sport" 2>&1)"
+  record "$sym" "$(with_timeout $COIN_CAP bash "$HERE/$script" "$rpcport" "$sport" 2>&1)"
 done
 
 echo ""

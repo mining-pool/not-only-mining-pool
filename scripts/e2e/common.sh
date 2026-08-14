@@ -48,3 +48,8 @@ cleanup() { for p in "${E2E_PIDS[@]:-}"; do kill -9 "$p" 2>/dev/null; done; }
 
 # retry_rpc <url> <jsonbody> — curl a JSON-RPC endpoint, echo body, non-zero on failure.
 rpc() { curl -s -m 8 "$1" -H 'Content-Type: application/json' -d "$2"; }
+
+# with_timeout <secs> <cmd...> — bound a blocking command (miner brute-force,
+# wallet gRPC call) so a stuck daemon fails fast instead of hanging the suite.
+# Falls back to running without a limit where `timeout` is absent (bare macOS).
+with_timeout() { local s="$1"; shift; if have timeout; then timeout "$s" "$@"; else "$@"; fi; }

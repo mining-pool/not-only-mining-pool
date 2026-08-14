@@ -137,9 +137,9 @@ H0=$(cli getblockcount)
 if [ -n "$ENGINE" ]; then
   # engine-mode miners speak the engine's own stratum dialect and pull the
   # header from the pool, so they only need the pool address + worker name.
-  "$DIR/miner" -pool 127.0.0.1:$SPORT -worker miner >"$DIR/miner.log" 2>&1
+  with_timeout 240 "$DIR/miner" -pool 127.0.0.1:$SPORT -worker miner >"$DIR/miner.log" 2>&1
 else
-  "$DIR/miner" -pool 127.0.0.1:$SPORT -algo "$ALGO" -coinbasehash "$CBHASH" -rpc "http://u:p@127.0.0.1:$RPCPORT" >"$DIR/miner.log" 2>&1
+  with_timeout 240 "$DIR/miner" -pool 127.0.0.1:$SPORT -algo "$ALGO" -coinbasehash "$CBHASH" -rpc "http://u:p@127.0.0.1:$RPCPORT" >"$DIR/miner.log" 2>&1
 fi
 sleep 2
 H1=$(cli getblockcount)

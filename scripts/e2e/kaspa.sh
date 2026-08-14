@@ -35,12 +35,12 @@ kill -0 $KASPAD_PID 2>/dev/null || { fail "$SYM: kaspad exited on startup"; tail
 # --- mint a simnet pay-to address via kaspawallet ---------------------------
 KEYS="$DIR/keys.json"
 log "$SYM: creating a simnet wallet"
-yes '' | "$KASPAWALLET" --simnet create --password "" --keys-file "$KEYS" --yes >"$DIR/wallet-create.log" 2>&1 || true
+yes '' | with_timeout 40 "$KASPAWALLET" --simnet create --password "" --keys-file "$KEYS" --yes >"$DIR/wallet-create.log" 2>&1 || true
 "$KASPAWALLET" --simnet start-daemon --keys-file "$KEYS" --password "" \
   --listen 127.0.0.1:$WPORT --rpcserver 127.0.0.1:$RPCPORT >"$DIR/walletd.log" 2>&1 &
 WALLETD_PID=$!
 sleep 4
-ADDR=$("$KASPAWALLET" --simnet new-address --daemonaddress 127.0.0.1:$WPORT 2>&1 | grep -oE 'kaspasim:[a-z0-9]+' | head -1)
+ADDR=$(with_timeout 30 "$KASPAWALLET" --simnet new-address --daemonaddress 127.0.0.1:$WPORT 2>&1 | grep -oE 'kaspasim:[a-z0-9]+' | head -1)
 [ -z "$ADDR" ] && { fail "$SYM: kaspawallet did not yield an address";
   echo "--- kaspawallet --help (create) ---"; "$KASPAWALLET" create --help 2>&1 | head -20;
   echo "--- wallet-create.log ---"; cat "$DIR/wallet-create.log" 2>/dev/null;
@@ -75,7 +75,7 @@ log "$SYM: pool up"
 
 # kaspad has no bitcoin-style getblockcount over bash; assert on the engine's
 # own "block accepted" log line (kaspa.go logs it after SubmitBlock succeeds).
-"$DIR/miner" -pool 127.0.0.1:$SPORT -worker miner -mindiff 0.0001 >"$DIR/miner.log" 2>&1
+with_timeout 120 "$DIR/miner" -pool 127.0.0.1:$SPORT -worker miner -mindiff 0.0001 >"$DIR/miner.log" 2>&1
 sleep 3
 if grep -q "kaspa block accepted" "$DIR/pool.log"; then
   ok "$SYM (kheavyhash): real block accepted by node"
