@@ -24,7 +24,7 @@ ensure_redis || exit 1
 
 DIR="$WORK/$SYM"; DIR2="$WORK/${SYM}b"; rm -rf "$DIR" "$DIR2"; mkdir -p "$DIR" "$DIR2"
 P1=$((RPCPORT+1000)); P2=$((RPCPORT+1001))
-cli()  { "$CLI" -datadir="$DIR" -rpcport=$RPCPORT -rpcuser=u -rpcpassword=p "$@"; }
+cli()  { "$CLI" -regtest -datadir="$DIR" -rpcport=$RPCPORT -rpcuser=u -rpcpassword=p "$@"; }
 w()    { cli "$@"; }   # fluxd uses a single default wallet
 trap 'cli stop >/dev/null 2>&1; pkill -9 -f "$DIR/pool" 2>/dev/null; "$CLI" -datadir="$DIR2" -rpcport=$P2 -rpcuser=u -rpcpassword=p stop >/dev/null 2>&1; cleanup' EXIT
 
@@ -46,8 +46,14 @@ mkconf "$DIR" $RPCPORT $P1
 "$DAEMON" -datadir="$DIR" -conf="$DIR/node.conf" $(rpcflags $RPCPORT $P1) -listen -daemon >"$DIR/node.log" 2>&1
 mkconf "$DIR2" $P2 $((P1+1))
 "$DAEMON" -datadir="$DIR2" -conf="$DIR2/node.conf" $(rpcflags $P2 $((P1+1))) -connect=127.0.0.1:$P1 -daemon >"$DIR2/node.log" 2>&1
-for i in $(seq 1 90); do cli getblockcount >/dev/null 2>&1 && break; sleep 1; done
-cli getblockcount >/dev/null 2>&1 || { fail "$SYM: node did not come up"; tail -25 "$DIR"/regtest/debug.log 2>/dev/null; exit 1; }
+for i in $(seq 1 150); do cli getblockcount >/dev/null 2>&1 && break; sleep 1; done
+if ! cli getblockcount >/dev/null 2>&1; then
+  fail "$SYM: node did not come up"
+  echo "--- flux-cli getblockcount (unsuppressed) ---" >&2; cli getblockcount >&2 2>&1 || true
+  echo "--- node.log ---" >&2; tail -15 "$DIR/node.log" 2>/dev/null >&2
+  echo "--- debug.log (rpc/http/bind/error) ---" >&2; grep -iE "http|rpc|bind|error|warmup|init message" "$DIR"/regtest/debug.log 2>/dev/null | tail -25 >&2
+  exit 1
+fi
 sleep 3
 
 POOL_ADDR=$(w getnewaddress 2>/dev/null)
