@@ -58,6 +58,13 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+      - name: free disk space
+        # The suite writes two ~1.2GB verthash.dat files (node + pool), a RandomX
+        # dataset and an ethash DAG on top of the image; the runner's default
+        # free space is tight. Drop preinstalled SDKs to reclaim ~20-30GB.
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
       - name: build e2e image
         run: docker build -t nomp-e2e -f scripts/e2e/Dockerfile .
       - name: run e2e suite (all coins)
