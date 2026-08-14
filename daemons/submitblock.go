@@ -26,16 +26,10 @@ func (dm *DaemonManager) SubmitBlock(blockHex string) {
 		} else {
 			var result string
 			err := json.Unmarshal(results[i].Result, &result)
-			if err == nil && result == "rejected" {
-				log.Error("Daemon instance rejected a supposedly valid block")
-			}
-
-			if err == nil && result == "invalid" {
-				log.Error("Daemon instance rejected an invalid block")
-			}
-
-			if err == nil && result == "inconclusive" {
-				log.Warn("Daemon instance warns an inconclusive block")
+			// submitblock returns null on success, otherwise a reject reason
+			// string (e.g. "high-hash", "bad-txnmrklroot", "duplicate").
+			if err == nil && result != "" {
+				log.Error("Daemon rejected the block: " + result)
 			}
 		}
 	}

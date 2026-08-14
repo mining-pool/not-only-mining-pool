@@ -11,10 +11,12 @@ import (
 
 	logging "github.com/ipfs/go-log/v2"
 
+	"github.com/mining-pool/not-only-mining-pool/algorithm"
 	"github.com/mining-pool/not-only-mining-pool/api"
 	"github.com/mining-pool/not-only-mining-pool/bans"
 	"github.com/mining-pool/not-only-mining-pool/config"
 	"github.com/mining-pool/not-only-mining-pool/daemons"
+	"github.com/mining-pool/not-only-mining-pool/engine"
 	"github.com/mining-pool/not-only-mining-pool/jobs"
 	"github.com/mining-pool/not-only-mining-pool/p2p"
 	"github.com/mining-pool/not-only-mining-pool/storage"
@@ -40,9 +42,61 @@ type Pool struct {
 	Recipients                 []*config.Recipient
 	ProtocolVersion            int
 	APIServer                  *api.Server
+
+	// Engine is set for non-GBT mining models (e.g. ethash). When set, Init
+	// skips the entire Bitcoin daemon/jobmanager/payments machinery.
+	Engine engine.Engine
+}
+
+// NewEnginePool builds a pool driven by a pluggable engine.Engine (e.g. ethash)
+// instead of the Bitcoin getblocktemplate flow. It wires only the shared
+// infrastructure — stratum server, storage, banning, API — plus the engine;
+// there is no bitcoin DaemonManager/JobManager/payment path.
+func NewEnginePool(options *config.Options) *Pool {
+	eng, ok := engine.Get(strings.ToLower(options.Engine))
+	if !ok {
+		log.Panicf("engine %q is not registered; build with the matching build tag (e.g. -tags ethash) to include it. Registered engines: %v", options.Engine, engine.Registered())
+	}
+
+	if err := eng.Init(options); err != nil {
+		log.Fatal("engine init failed: ", err)
+	}
+
+	db := storage.NewStorage(options.Coin.Name, options.Storage)
+	bm := bans.NewBanningManager(options.Banning)
+	apiServer := api.NewAPIServer(options, db)
+
+	ss := stratum.NewStratumServer(options, nil, bm)
+	ss.Engine = eng
+
+	return &Pool{
+		Options:       options,
+		Engine:        eng,
+		APIServer:     apiServer,
+		StratumServer: ss,
+		Stats:         NewStats(),
+	}
 }
 
 func NewPool(options *config.Options) *Pool {
+	// NewPool is the Bitcoin/GBT path; other engines must go through NewEnginePool.
+	if eng := strings.ToLower(options.Engine); eng != "" && eng != "gbt" {
+		log.Panicf("engine %q must be constructed via pool.NewEnginePool (main dispatches on the \"engine\" config field)", options.Engine)
+	}
+
+	if !algorithm.IsSupported(options.Algorithm.Name) {
+		log.Panicf("algorithm %q is not supported, supported: %s", options.Algorithm.Name, strings.Join(algorithm.SupportedAlgorithms(), ", "))
+	}
+	if bh := options.Algorithm.BlockHasher; bh != "" && !algorithm.IsSupported(bh) {
+		log.Panicf("blockHasher %q is not supported, supported: %s", bh, strings.Join(algorithm.SupportedAlgorithms(), ", "))
+	}
+	// allow configs to omit "multiplier": fall back to the algorithm's conventional value.
+	if options.Algorithm.Multiplier == 0 {
+		options.Algorithm.Multiplier = int(algorithm.DefaultMultiplier(options.Algorithm.Name))
+	}
+	// pay expensive one-off init (e.g. verthash.dat) at startup, not on first share
+	algorithm.Warmup(options.Algorithm.Name)
+
 	dm := daemons.NewDaemonManager(options.Daemons, options.Coin)
 	dm.Check()
 
@@ -97,6 +151,16 @@ func NewPool(options *config.Options) *Pool {
 
 //
 func (p *Pool) Init() {
+	if p.Engine != nil {
+		// Engine-driven pool: the engine already fetched its first work in
+		// NewEnginePool; just serve stratum + API. No GBT/p2p/payment machinery.
+		p.StartStratumServer()
+		p.APIServer.Serve()
+		log.Warnf("Stratum Pool Server Started for %s [%s] using the %q engine, serving ports %v",
+			p.Options.Coin.Name, strings.ToUpper(p.Options.Coin.Symbol), p.Engine.Name(), p.Stats.StratumPorts)
+		return
+	}
+
 	p.CheckAllReady()
 	p.DetectCoinData()
 
@@ -277,7 +341,11 @@ func (p *Pool) OutputPoolInfo() {
 }
 
 func (p *Pool) CheckAllReady() {
-	_, results := p.DaemonManager.CmdAll("getblocktemplate", []interface{}{map[string]interface{}{"capabilities": []string{"coinbasetxn", "workid", "coinbase/append"}, "rules": []string{"segwit"}}})
+	rules := []string{"segwit"}
+	if p.Options.Coin.GBTRules != nil {
+		rules = p.Options.Coin.GBTRules
+	}
+	_, results := p.DaemonManager.CmdAll("getblocktemplate", []interface{}{map[string]interface{}{"capabilities": []string{"coinbasetxn", "workid", "coinbase/append"}, "rules": rules}})
 	for i := range results {
 		if results[i] == nil {
 			log.Fatalf("daemon %s is not available", p.DaemonManager.Daemons[i])

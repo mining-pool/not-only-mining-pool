@@ -1,0 +1,44 @@
+2026-08-13 18:26:50.964	     0x2072fa2c0	INFO	logging	contrib/epee/src/mlog.cpp:274	New log categories: *:WARNING,net:FATAL,net.http:FATAL,net.ssl:FATAL,net.p2p:FATAL,net.cn:FATAL,daemon.rpc:FATAL,global:INFO,verify:FATAL,serialization:FATAL,daemon.rpc.payment:ERROR,stacktrace:INFO,logging:INFO,msgwriter:INFO
+2026-08-13 18:26:50.964	     0x2072fa2c0	INFO	logging	contrib/epee/src/mlog.cpp:274	New log categories: *:WARNING,net:FATAL,net.http:FATAL,net.ssl:FATAL,net.p2p:FATAL,net.cn:FATAL,daemon.rpc:FATAL,global:INFO,verify:FATAL,serialization:FATAL,daemon.rpc.payment:ERROR,stacktrace:INFO,logging:INFO,msgwriter:INFO
+2026-08-13 18:26:50.964	     0x2072fa2c0	INFO	msgwriter	src/common/scoped_message_writer.h:102	This is the RPC monero wallet. It needs to connect to a monero
+2026-08-13 18:26:50.964	     0x2072fa2c0	INFO	msgwriter	src/common/scoped_message_writer.h:102	daemon to work correctly.
+2026-08-13 18:26:50.964	     0x2072fa2c0	INFO	msgwriter	src/common/scoped_message_writer.h:102	Monero 'Fluorine Fermi' (v0.18.5.1-unknown)
+2026-08-13 18:26:50.965	     0x2072fa2c0	INFO	msgwriter	src/common/scoped_message_writer.h:102	Logging to monero-wallet-rpc.log
+2026-08-13 18:26:50.966	     0x2072fa2c0	INFO	global	contrib/epee/include/net/http_server_impl_base.h:94	Binding on 127.0.0.1 (IPv4):18199
+2026-08-13 18:26:51.932	     0x2072fa2c0	WARNING	wallet.rpc	src/wallet/wallet_rpc_server.cpp:4987	Starting wallet RPC server
+2026-08-13 18:27:13.152	[RPC0]	ERROR	wallet.wallet2	src/wallet/wallet2.cpp:15991	!r. THROW EXCEPTION: tools::error::no_connection_to_daemon
+2026-08-13 18:27:13.155	[RPC0]	ERROR	wallet.wallet2	src/wallet/wallet2.cpp:15991	!r. THROW EXCEPTION: tools::error::no_connection_to_daemon
+2026-08-13 18:27:13.155	[RPC0]	ERROR	wallet.wallet2	src/wallet/wallet2.cpp:15991	!r. THROW EXCEPTION: tools::error::no_connection_to_daemon
+2026-08-13 18:27:13.155	[RPC0]	ERROR	wallet.wallet2	src/wallet/wallet2.cpp:15991	!r. THROW EXCEPTION: tools::error::no_connection_to_daemon
+2026-08-13 18:27:13.155	[RPC0]	ERROR	wallet.wallet2	src/wallet/wallet2.cpp:4292	pull_blocks failed, try_count=3
+2026-08-13 18:27:13.155	[RPC0]	ERROR	wallet.rpc	src/wallet/wallet_rpc_server.cpp:248	Exception at while refreshing, what=no connection to daemon
+2026-08-13 18:28:17.463	     0x2072fa2c0	INFO	logging	contrib/epee/src/mlog.cpp:274	New log categories: *:WARNING,net:FATAL,net.http:FATAL,net.ssl:FATAL,net.p2p:FATAL,net.cn:FATAL,daemon.rpc:FATAL,global:INFO,verify:FATAL,serialization:FATAL,daemon.rpc.payment:ERROR,stacktrace:INFO,logging:INFO,msgwriter:INFO
+2026-08-13 18:28:17.463	     0x2072fa2c0	INFO	logging	contrib/epee/src/mlog.cpp:274	New log categories: *:WARNING,net:FATAL,net.http:FATAL,net.ssl:FATAL,net.p2p:FATAL,net.cn:FATAL,daemon.rpc:FATAL,global:INFO,verify:FATAL,serialization:FATAL,daemon.rpc.payment:ERROR,stacktrace:INFO,logging:INFO,msgwriter:INFO
+2026-08-13 18:28:17.463	     0x2072fa2c0	INFO	msgwriter	src/common/scoped_message_writer.h:102	This is the RPC monero wallet. It needs to connect to a monero
+2026-08-13 18:28:17.463	     0x2072fa2c0	INFO	msgwriter	src/common/scoped_message_writer.h:102	daemon to work correctly.
+2026-08-13 18:28:17.463	     0x2072fa2c0	INFO	msgwriter	src/common/scoped_message_writer.h:102	Monero 'Fluorine Fermi' (v0.18.5.1-unknown)
+2026-08-13 18:28:17.463	     0x2072fa2c0	INFO	msgwriter	src/common/scoped_message_writer.h:102	Logging to monero-wallet-rpc.log
+2026-08-13 18:28:17.464	     0x2072fa2c0	INFO	global	contrib/epee/include/net/http_server_impl_base.h:94	Binding on 127.0.0.1 (IPv4):18199
+2026-08-13 18:28:17.609	     0x2072fa2c0	WARNING	wallet.rpc	src/wallet/wallet_rpc_server.cpp:4987	Starting wallet RPC server
+2026-08-13 18:29:46.220	     0x2072fa2c0	INFO	logging	contrib/epee/src/mlog.cpp:274	New log categories: *:WARNING,net:FATAL,net.http:FATAL,net.ssl:FATAL,net.p2p:FATAL,net.cn:FATAL,daemon.rpc:FATAL,global:INFO,verify:FATAL,serialization:FATAL,daemon.rpc.payment:ERROR,stacktrace:INFO,logging:INFO,msgwriter:INFO
+2026-08-13 18:29:46.220	     0x2072fa2c0	INFO	logging	contrib/epee/src/mlog.cpp:274	New log categories: *:WARNING,net:FATAL,net.http:FATAL,net.ssl:FATAL,net.p2p:FATAL,net.cn:FATAL,daemon.rpc:FATAL,global:INFO,verify:FATAL,serialization:FATAL,daemon.rpc.payment:ERROR,stacktrace:INFO,logging:INFO,msgwriter:INFO
+2026-08-13 18:29:46.220	     0x2072fa2c0	INFO	msgwriter	src/common/scoped_message_writer.h:102	This is the RPC monero wallet. It needs to connect to a monero
+2026-08-13 18:29:46.220	     0x2072fa2c0	INFO	msgwriter	src/common/scoped_message_writer.h:102	daemon to work correctly.
+2026-08-13 18:29:46.220	     0x2072fa2c0	INFO	msgwriter	src/common/scoped_message_writer.h:102	Monero 'Fluorine Fermi' (v0.18.5.1-unknown)
+2026-08-13 18:29:46.221	     0x2072fa2c0	INFO	msgwriter	src/common/scoped_message_writer.h:102	Logging to monero-wallet-rpc.log
+2026-08-13 18:29:46.222	     0x2072fa2c0	INFO	global	contrib/epee/include/net/http_server_impl_base.h:94	Binding on 127.0.0.1 (IPv4):18199
+2026-08-13 18:29:46.297	     0x2072fa2c0	WARNING	wallet.rpc	src/wallet/wallet_rpc_server.cpp:4987	Starting wallet RPC server
+2026-08-13 18:30:06.683	[RPC0]	ERROR	wallet.wallet2	src/wallet/wallet2.cpp:15991	!r. THROW EXCEPTION: tools::error::no_connection_to_daemon
+2026-08-13 18:30:06.686	[RPC0]	ERROR	wallet.wallet2	src/wallet/wallet2.cpp:15991	!r. THROW EXCEPTION: tools::error::no_connection_to_daemon
+2026-08-13 18:30:06.686	[RPC0]	ERROR	wallet.wallet2	src/wallet/wallet2.cpp:15991	!r. THROW EXCEPTION: tools::error::no_connection_to_daemon
+2026-08-13 18:30:06.686	[RPC0]	ERROR	wallet.wallet2	src/wallet/wallet2.cpp:15991	!r. THROW EXCEPTION: tools::error::no_connection_to_daemon
+2026-08-13 18:30:06.686	[RPC0]	ERROR	wallet.wallet2	src/wallet/wallet2.cpp:4292	pull_blocks failed, try_count=3
+2026-08-13 18:30:06.686	[RPC0]	ERROR	wallet.rpc	src/wallet/wallet_rpc_server.cpp:248	Exception at while refreshing, what=no connection to daemon
+2026-08-13 18:31:19.312	     0x2072fa2c0	INFO	logging	contrib/epee/src/mlog.cpp:274	New log categories: *:WARNING,net:FATAL,net.http:FATAL,net.ssl:FATAL,net.p2p:FATAL,net.cn:FATAL,daemon.rpc:FATAL,global:INFO,verify:FATAL,serialization:FATAL,daemon.rpc.payment:ERROR,stacktrace:INFO,logging:INFO,msgwriter:INFO
+2026-08-13 18:31:19.313	     0x2072fa2c0	INFO	logging	contrib/epee/src/mlog.cpp:274	New log categories: *:WARNING,net:FATAL,net.http:FATAL,net.ssl:FATAL,net.p2p:FATAL,net.cn:FATAL,daemon.rpc:FATAL,global:INFO,verify:FATAL,serialization:FATAL,daemon.rpc.payment:ERROR,stacktrace:INFO,logging:INFO,msgwriter:INFO
+2026-08-13 18:31:19.313	     0x2072fa2c0	INFO	msgwriter	src/common/scoped_message_writer.h:102	This is the RPC monero wallet. It needs to connect to a monero
+2026-08-13 18:31:19.313	     0x2072fa2c0	INFO	msgwriter	src/common/scoped_message_writer.h:102	daemon to work correctly.
+2026-08-13 18:31:19.313	     0x2072fa2c0	INFO	msgwriter	src/common/scoped_message_writer.h:102	Monero 'Fluorine Fermi' (v0.18.5.1-unknown)
+2026-08-13 18:31:19.313	     0x2072fa2c0	INFO	msgwriter	src/common/scoped_message_writer.h:102	Logging to monero-wallet-rpc.log
+2026-08-13 18:31:19.315	     0x2072fa2c0	INFO	global	contrib/epee/include/net/http_server_impl_base.h:94	Binding on 127.0.0.1 (IPv4):18199
+2026-08-13 18:31:19.367	     0x2072fa2c0	WARNING	wallet.rpc	src/wallet/wallet_rpc_server.cpp:4987	Starting wallet RPC server

@@ -17,6 +17,7 @@ import (
 	"github.com/mining-pool/not-only-mining-pool/bans"
 	"github.com/mining-pool/not-only-mining-pool/config"
 	"github.com/mining-pool/not-only-mining-pool/daemons"
+	"github.com/mining-pool/not-only-mining-pool/engine"
 	"github.com/mining-pool/not-only-mining-pool/jobs"
 	"github.com/mining-pool/not-only-mining-pool/utils"
 	"github.com/mining-pool/not-only-mining-pool/vardiff"
@@ -50,12 +51,23 @@ type Client struct {
 	BanningManager    *bans.BanningManager
 	JobManager        *jobs.JobManager
 	SocketClosedEvent chan struct{}
+
+	// Engine, when non-nil, switches this client to a pluggable mining engine
+	// (e.g. ethash). The Bitcoin/GBT path is used when Engine is nil.
+	Engine engine.Engine
 }
 
 func NewStratumClient(subscriptionId []byte, socket net.Conn, options *config.Options, jm *jobs.JobManager, bm *bans.BanningManager) *Client {
 	var varDiff *vardiff.VarDiff
 	if options.Ports[socket.LocalAddr().(*net.TCPAddr).Port] != nil && options.Ports[socket.LocalAddr().(*net.TCPAddr).Port].VarDiff != nil {
 		varDiff = vardiff.NewVarDiff(options.Ports[socket.LocalAddr().(*net.TCPAddr).Port].VarDiff)
+	}
+
+	// The Bitcoin/GBT path assigns the extranonce here; engine mode (jm == nil)
+	// assigns it later in the engine's OnSubscribe.
+	var extraNonce1 []byte
+	if jm != nil {
+		extraNonce1 = jm.ExtraNonce1Generator.GetExtraNonce1()
 	}
 
 	return &Client{
@@ -72,7 +84,7 @@ func NewStratumClient(subscriptionId []byte, socket net.Conn, options *config.Op
 		},
 		IsAuthorized:           false,
 		SubscriptionBeforeAuth: false,
-		ExtraNonce1:            jm.ExtraNonce1Generator.GetExtraNonce1(),
+		ExtraNonce1:            extraNonce1,
 
 		VarDiff:        varDiff,
 		JobManager:     jm,
@@ -108,6 +120,12 @@ func (sc *Client) Init() {
 }
 
 func (sc *Client) HandleMessage(message *daemons.JsonRpcRequest) {
+	if sc.Engine != nil {
+		sc.LastActivity = time.Now()
+		sc.handleEngineMessage(message)
+		return
+	}
+
 	switch message.Method {
 	case "mining.subscribe":
 		sc.HandleSubscribe(message)
@@ -167,8 +185,13 @@ func (sc *Client) HandleSubscribe(message *daemons.JsonRpcRequest) {
 func (sc *Client) HandleAuthorize(message *daemons.JsonRpcRequest, replyToSocket bool) {
 	log.Info("handling authorize")
 
-	sc.WorkerName = string(message.Params[0])
-	sc.WorkerPass = string(message.Params[1])
+	authParams := message.ParamsArray()
+	if len(authParams) < 2 {
+		log.Warn("malformed mining.authorize params from ", sc.GetLabel())
+		return
+	}
+	sc.WorkerName = string(authParams[0])
+	sc.WorkerPass = string(authParams[1])
 
 	authorized, disconnect, err := sc.AuthorizeFn(sc.RemoteAddress, sc.Socket.LocalAddr().(*net.TCPAddr).Port, sc.WorkerName, sc.WorkerPass)
 	sc.IsAuthorized = err == nil && authorized
@@ -238,16 +261,27 @@ func (sc *Client) HandleSubmit(message *daemons.JsonRpcRequest) {
 		return
 	}
 
+	submitParams := message.ParamsArray()
+	if len(submitParams) < 5 { // pre-existing panic risk: was indexed unchecked
+		sc.SendJsonRPC(&daemons.JsonRpcResponse{
+			Id:     message.Id,
+			Result: nil,
+			Error:  &daemons.JsonRpcError{Code: 24, Message: "malformed submit params"},
+		})
+		sc.ShouldBan(false)
+		return
+	}
+
 	share := sc.JobManager.ProcessSubmit(
-		utils.RawJsonToString(message.Params[1]),
+		utils.RawJsonToString(submitParams[1]),
 		sc.PreviousDifficulty,
 		sc.CurrentDifficulty,
 		sc.ExtraNonce1,
-		utils.RawJsonToString(message.Params[2]),
-		utils.RawJsonToString(message.Params[3]),
-		utils.RawJsonToString(message.Params[4]),
+		utils.RawJsonToString(submitParams[2]),
+		utils.RawJsonToString(submitParams[3]),
+		utils.RawJsonToString(submitParams[4]),
 		sc.RemoteAddress,
-		utils.RawJsonToString(message.Params[0]),
+		utils.RawJsonToString(submitParams[0]),
 	)
 
 	sc.JobManager.ProcessShare(share)
@@ -259,7 +293,7 @@ func (sc *Client) HandleSubmit(message *daemons.JsonRpcRequest) {
 		sc.SendJsonRPC(&daemons.JsonRpcRequest{
 			Id:     nil,
 			Method: "mining.set_difficulty",
-			Params: []json.RawMessage{utils.Jsonify(f)},
+			Params: daemons.MarshalParams(f),
 		})
 	}
 
@@ -448,7 +482,7 @@ func (sc *Client) SendDifficulty(diff *big.Float) bool {
 	sc.SendJsonRPC(&daemons.JsonRpcRequest{
 		Id:     0,
 		Method: "mining.set_difficulty",
-		Params: []json.RawMessage{utils.Jsonify(f)},
+		Params: daemons.MarshalParams(f),
 	})
 
 	return true
@@ -477,15 +511,10 @@ func (sc *Client) SendMiningJob(jobParams []interface{}) {
 		}
 	}
 
-	params := make([]json.RawMessage, len(jobParams))
-	for i := range jobParams {
-		params[i] = utils.Jsonify(jobParams[i])
-	}
-
 	sc.SendJsonRPC(&daemons.JsonRpcRequest{
 		Id:     nil,
 		Method: "mining.notify",
-		Params: params,
+		Params: daemons.MarshalParams(jobParams...),
 	})
 }
 
@@ -493,7 +522,7 @@ func (sc *Client) ManuallyAuthClient(username, password string) {
 	sc.HandleAuthorize(&daemons.JsonRpcRequest{
 		Id:     1,
 		Method: "",
-		Params: []json.RawMessage{utils.Jsonify(username), utils.Jsonify(password)},
+		Params: daemons.MarshalParams(username, password),
 	}, false)
 }
 

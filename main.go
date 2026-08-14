@@ -44,7 +44,14 @@ func main() {
 		log.Panic(err)
 	}
 
-	p := pool.NewPool(&conf)
+	var p *pool.Pool
+	if conf.Engine != "" && conf.Engine != "gbt" {
+		// pluggable engines register themselves via build-tagged imports
+		// (see engines_*.go); e.g. `go build -tags ethash` for ETC.
+		p = pool.NewEnginePool(&conf)
+	} else {
+		p = pool.NewPool(&conf)
+	}
 	p.Init()
 	for {
 		select {}

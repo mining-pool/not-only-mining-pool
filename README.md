@@ -20,7 +20,12 @@ In other words, "大人，時代變了！".
 
 ### 0x00 Check
 
-Make sure your algorithm in support, if not, take an issue. 
+Make sure your algorithm in support, if not, take an issue.
+
+> 主流矿币适配（Top-20）及"如何加算法/加币"完整教程见 [`TUTORIAL_zh.md`](TUTORIAL_zh.md)，
+> 开箱即用的币种配置模板见 [`coins/`](coins/)。
+> Supported algorithms out of the box: `sha256`, `sha256d`, `scrypt`, `x11`, `keccak`, `groestl`, `lyra2rev2`, `verthash`;
+> others can be plugged in via `algorithm.RegisterHash` (see the tutorial). 
 
 ### 0x01 Configuration
 

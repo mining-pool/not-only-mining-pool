@@ -29,13 +29,14 @@ type Job struct {
 	MerkleTree            *merkletree.MerkleTree
 }
 
-func NewJob(jobId string, rpcData *daemons.GetBlockTemplate, poolAddressScript, extraNoncePlaceholder []byte, reward string, txMessages bool, recipients []*config.Recipient) *Job {
+func NewJob(jobId string, rpcData *daemons.GetBlockTemplate, poolAddressScript, extraNoncePlaceholder []byte, reward string, txMessages bool, recipients []*config.Recipient, coinbaseHasher merkletree.Hasher) *Job {
 	var bigTarget *big.Int
 
 	if rpcData.Target != "" {
 		bigTarget, _ = new(big.Int).SetString(rpcData.Target, 16)
 	} else {
-		utils.BigIntFromBitsHex(rpcData.Bits)
+		// (pre-existing bug fixed: the computed value was discarded)
+		bigTarget = utils.BigIntFromBitsHex(rpcData.Bits)
 	}
 
 	bigDiff := new(big.Float).Quo(
@@ -58,7 +59,7 @@ func NewJob(jobId string, rpcData *daemons.GetBlockTemplate, poolAddressScript, 
 	}
 
 	txsBytes := GetTransactionBytes(rpcData.Transactions)
-	merkleTree := merkletree.NewMerkleTree(txsBytes)
+	merkleTree := merkletree.NewMerkleTree(txsBytes, coinbaseHasher)
 	merkleBranch := merkletree.GetMerkleHashes(merkleTree.Steps)
 	generationTransaction := transactions.CreateGeneration(
 		rpcData,

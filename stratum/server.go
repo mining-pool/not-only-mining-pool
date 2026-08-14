@@ -13,6 +13,7 @@ import (
 	"github.com/mining-pool/not-only-mining-pool/bans"
 	"github.com/mining-pool/not-only-mining-pool/config"
 	"github.com/mining-pool/not-only-mining-pool/daemons"
+	"github.com/mining-pool/not-only-mining-pool/engine"
 	"github.com/mining-pool/not-only-mining-pool/jobs"
 	"github.com/mining-pool/not-only-mining-pool/vardiff"
 )
@@ -29,6 +30,10 @@ type Server struct {
 	StratumClients      map[uint64]*Client
 	SubscriptionCounter *SubscriptionCounter
 	BanningManager      *bans.BanningManager
+
+	// Engine, when non-nil, drives an alternative mining model (e.g. ethash);
+	// the server then skips the Bitcoin/GBT rebroadcast loop.
+	Engine engine.Engine
 
 	rebroadcastTicker *time.Ticker
 }
@@ -72,22 +77,33 @@ func (ss *Server) Init() (portStarted []int) {
 		log.Panic("No port listened")
 	}
 
-	go func() {
-		var id string
-		var txs []byte
-		ss.rebroadcastTicker = time.NewTicker(time.Duration(ss.Options.JobRebroadcastTimeout) * time.Second)
-		defer log.Warn("broadcaster stopped")
-		defer ss.rebroadcastTicker.Stop()
-		for {
-			<-ss.rebroadcastTicker.C
-			go ss.BroadcastCurrentMiningJob(ss.JobManager.CurrentJob.GetJobParams(
-				id != ss.JobManager.CurrentJob.JobId || !bytes.Equal(txs, ss.JobManager.CurrentJob.TransactionData),
-			))
+	if ss.Engine != nil {
+		// Engine-driven work: the engine watches the node (events first, polling
+		// only as fallback) and calls back on every new-work signal.
+		go func() {
+			defer log.Warn("engine watcher stopped")
+			if err := ss.Engine.Watch(ss.BroadcastEngineWork); err != nil {
+				log.Error("engine watch stopped: ", err)
+			}
+		}()
+	} else {
+		go func() {
+			var id string
+			var txs []byte
+			ss.rebroadcastTicker = time.NewTicker(time.Duration(ss.Options.JobRebroadcastTimeout) * time.Second)
+			defer log.Warn("broadcaster stopped")
+			defer ss.rebroadcastTicker.Stop()
+			for {
+				<-ss.rebroadcastTicker.C
+				go ss.BroadcastCurrentMiningJob(ss.JobManager.CurrentJob.GetJobParams(
+					id != ss.JobManager.CurrentJob.JobId || !bytes.Equal(txs, ss.JobManager.CurrentJob.TransactionData),
+				))
 
-			id = ss.JobManager.CurrentJob.JobId
-			txs = ss.JobManager.CurrentJob.TransactionData
-		}
-	}()
+				id = ss.JobManager.CurrentJob.JobId
+				txs = ss.JobManager.CurrentJob.TransactionData
+			}
+		}()
+	}
 
 	go func() {
 		for {
@@ -111,6 +127,7 @@ func (ss *Server) Init() (portStarted []int) {
 func (ss *Server) HandleNewClient(socket net.Conn) []byte {
 	subscriptionID := ss.SubscriptionCounter.Next()
 	client := NewStratumClient(subscriptionID, socket, ss.Options, ss.JobManager, ss.BanningManager)
+	client.Engine = ss.Engine
 	ss.StratumClients[binary.LittleEndian.Uint64(subscriptionID)] = client
 	// client.connected
 
@@ -132,6 +149,18 @@ func (ss *Server) BroadcastCurrentMiningJob(jobParams []interface{}) {
 	log.Info("broadcasting job params")
 	for clientId := range ss.StratumClients {
 		ss.StratumClients[clientId].SendMiningJob(jobParams)
+	}
+}
+
+// BroadcastEngineWork pushes fresh engine work to every authorized client, each
+// at its own difficulty/target.
+func (ss *Server) BroadcastEngineWork() {
+	log.Info("broadcasting engine work")
+	for clientId := range ss.StratumClients {
+		c := ss.StratumClients[clientId]
+		if c.IsAuthorized {
+			c.sendEngineWork()
+		}
 	}
 }
 

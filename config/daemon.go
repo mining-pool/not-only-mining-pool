@@ -10,6 +10,12 @@ type DaemonOptions struct {
 	User     string            `json:"user"`
 	Password string            `json:"password"`
 	TLS      *TLSClientOptions `json:"tls"`
+
+	// ZMQ is an optional publisher endpoint (e.g. "tcp://127.0.0.1:28332") for
+	// new-block notifications. Engines subscribe to it for event-driven work and
+	// fall back to polling when it is empty. bitcoind: -zmqpubhashblock;
+	// monerod: --zmq-pub.
+	ZMQ string `json:"zmq"`
 }
 
 func (d *DaemonOptions) String() string {
