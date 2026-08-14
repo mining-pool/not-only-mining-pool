@@ -2,8 +2,8 @@ package pool
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
-	"github.com/mining-pool/not-only-mining-pool/payments"
 	"reflect"
 	"strconv"
 	"strings"
@@ -11,12 +11,15 @@ import (
 
 	logging "github.com/ipfs/go-log/v2"
 
+	"github.com/mining-pool/not-only-mining-pool/algorithm"
 	"github.com/mining-pool/not-only-mining-pool/api"
 	"github.com/mining-pool/not-only-mining-pool/bans"
 	"github.com/mining-pool/not-only-mining-pool/config"
 	"github.com/mining-pool/not-only-mining-pool/daemons"
+	"github.com/mining-pool/not-only-mining-pool/engine"
 	"github.com/mining-pool/not-only-mining-pool/jobs"
 	"github.com/mining-pool/not-only-mining-pool/p2p"
+	"github.com/mining-pool/not-only-mining-pool/payments"
 	"github.com/mining-pool/not-only-mining-pool/storage"
 	"github.com/mining-pool/not-only-mining-pool/stratum"
 	"github.com/mining-pool/not-only-mining-pool/utils"
@@ -25,23 +28,77 @@ import (
 var log = logging.Logger("pool")
 
 type Pool struct {
-	DaemonManager  *daemons.DaemonManager
-	PaymentManager *payments.PaymentManager
-	JobManager     *jobs.JobManager
-	P2PManager     *p2p.Peer
+	DaemonManager *daemons.DaemonManager
+	JobManager    *jobs.JobManager
+	P2PManager    *p2p.Peer
 
 	StratumServer *stratum.Server
 
 	Options                    *config.Options
+	Magnitude                  uint64
+	CoinPrecision              int
 	HasGetInfo                 bool
 	Stats                      *Stats
 	BlockPollingIntervalTicker *time.Ticker
 	Recipients                 []*config.Recipient
 	ProtocolVersion            int
 	APIServer                  *api.Server
+	PaymentManager             *payments.PaymentManager
+
+	// Engine is set for non-GBT mining models (e.g. ethash). When set, Init
+	// skips the entire Bitcoin daemon/jobmanager/payments machinery.
+	Engine engine.Engine
+}
+
+// NewEnginePool builds a pool driven by a pluggable engine.Engine (e.g. ethash)
+// instead of the Bitcoin getblocktemplate flow. It wires only the shared
+// infrastructure — stratum server, storage, banning, API — plus the engine;
+// there is no bitcoin DaemonManager/JobManager/payment path.
+func NewEnginePool(options *config.Options) *Pool {
+	eng, ok := engine.Get(strings.ToLower(options.Engine))
+	if !ok {
+		log.Panicf("engine %q is not registered; build with the matching build tag (e.g. -tags ethash) to include it. Registered engines: %v", options.Engine, engine.Registered())
+	}
+
+	if err := eng.Init(options); err != nil {
+		log.Fatal("engine init failed: ", err)
+	}
+
+	db := storage.NewStorage(options.Coin.Name, options.Storage)
+	bm := bans.NewBanningManager(options.Banning)
+	apiServer := api.NewAPIServer(options, db)
+
+	ss := stratum.NewStratumServer(options, nil, bm)
+	ss.Engine = eng
+
+	return &Pool{
+		Options:       options,
+		Engine:        eng,
+		APIServer:     apiServer,
+		StratumServer: ss,
+		Stats:         NewStats(),
+	}
 }
 
 func NewPool(options *config.Options) *Pool {
+	// NewPool is the Bitcoin/GBT path; other engines must go through NewEnginePool.
+	if eng := strings.ToLower(options.Engine); eng != "" && eng != "gbt" {
+		log.Panicf("engine %q must be constructed via pool.NewEnginePool (main dispatches on the \"engine\" config field)", options.Engine)
+	}
+
+	if !algorithm.IsSupported(options.Algorithm.Name) {
+		log.Panicf("algorithm %q is not supported, supported: %s", options.Algorithm.Name, strings.Join(algorithm.SupportedAlgorithms(), ", "))
+	}
+	if bh := options.Algorithm.BlockHasher; bh != "" && !algorithm.IsSupported(bh) {
+		log.Panicf("blockHasher %q is not supported, supported: %s", bh, strings.Join(algorithm.SupportedAlgorithms(), ", "))
+	}
+	// allow configs to omit "multiplier": fall back to the algorithm's conventional value.
+	if options.Algorithm.Multiplier == 0 {
+		options.Algorithm.Multiplier = int(algorithm.DefaultMultiplier(options.Algorithm.Name))
+	}
+	// pay expensive one-off init (e.g. verthash.dat) at startup, not on first share
+	algorithm.Warmup(options.Algorithm.Name)
+
 	dm := daemons.NewDaemonManager(options.Daemons, options.Coin)
 	dm.Check()
 
@@ -55,12 +112,32 @@ func NewPool(options *config.Options) *Pool {
 		}
 	}
 
+	var magnitude int64 = 100000000 //sat
+	if !options.DisablePayment {
+		_, getBalance, _ := dm.Cmd("getbalance", []interface{}{})
+
+		if getBalance.Error != nil {
+			log.Fatal(errors.New(fmt.Sprint(getBalance.Error)))
+		}
+
+		split0 := bytes.Split(utils.Jsonify(getBalance), []byte(`result":`))
+		split2 := bytes.Split(split0[1], []byte(","))
+		split3 := bytes.Split(split2[0], []byte("."))
+		d := split3[1]
+
+		var err error
+		magnitude, err = strconv.ParseInt("10"+strconv.Itoa(len(d))+"0", 10, 64)
+		if err != nil {
+			log.Fatal("ErrorCode detecting number of satoshis in a coin, cannot do payments processing. Tried parsing: ", string(utils.Jsonify(getBalance)))
+		}
+	}
+
 	db := storage.NewStorage(options.Coin.Name, options.Storage)
 
-	pm := payments.NewPaymentManager(options.PaymentOptions, options.PoolAddress, dm, db)
 	jm := jobs.NewJobManager(options, dm, db)
 	bm := bans.NewBanningManager(options.Banning)
 	s := api.NewAPIServer(options, db)
+	pm := payments.NewPaymentManager(options.PaymentOptions, options.PoolAddress, dm, db)
 
 	return &Pool{
 		Options:        options,
@@ -70,12 +147,23 @@ func NewPool(options *config.Options) *Pool {
 		PaymentManager: pm,
 
 		StratumServer: stratum.NewStratumServer(options, jm, bm),
+		Magnitude:     uint64(magnitude),
+		CoinPrecision: len(strconv.FormatUint(uint64(magnitude), 10)) - 1,
 		Stats:         NewStats(),
 	}
 }
 
-//
 func (p *Pool) Init() {
+	if p.Engine != nil {
+		// Engine-driven pool: the engine already fetched its first work in
+		// NewEnginePool; just serve stratum + API. No GBT/p2p/payment machinery.
+		p.StartStratumServer()
+		p.APIServer.Serve()
+		log.Warnf("Stratum Pool Server Started for %s [%s] using the %q engine, serving ports %v",
+			p.Options.Coin.Name, strings.ToUpper(p.Options.Coin.Symbol), p.Engine.Name(), p.Stats.StratumPorts)
+		return
+	}
+
 	p.CheckAllReady()
 	p.DetectCoinData()
 
@@ -91,6 +179,11 @@ func (p *Pool) Init() {
 
 	p.StartStratumServer()
 	p.APIServer.Serve()
+
+	if !p.Options.DisablePayment && p.Options.PaymentOptions != nil {
+		p.PaymentManager.Init()
+		go p.PaymentManager.Serve()
+	}
 
 	p.OutputPoolInfo()
 }
@@ -140,11 +233,8 @@ func (p *Pool) DetectCoinData() {
 	var diff float64
 
 	// getdifficulty
-	_, rpcResponse, _, err := p.DaemonManager.Cmd("getdifficulty", []interface{}{})
-	if err != nil {
-		log.Panic(err)
-	}
-	if rpcResponse == nil || rpcResponse.Error != nil {
+	_, rpcResponse, _ := p.DaemonManager.Cmd("getdifficulty", []interface{}{})
+	if rpcResponse.Error != nil || rpcResponse == nil {
 		log.Error("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
 		return
 	}
@@ -167,23 +257,15 @@ func (p *Pool) DetectCoinData() {
 	}
 
 	// getmininginfo
-	_, rpcResponse, _, err = p.DaemonManager.Cmd("getmininginfo", []interface{}{})
-	if err != nil {
-		log.Panic(err)
-	}
-
-	if rpcResponse == nil || rpcResponse.Error != nil {
+	_, rpcResponse, _ = p.DaemonManager.Cmd("getmininginfo", []interface{}{})
+	if rpcResponse.Error != nil || rpcResponse == nil {
 		log.Error("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
 		return
 	}
 	getMiningInfo := daemons.BytesToGetMiningInfo(rpcResponse.Result)
 	p.Stats.NetworkHashrate = getMiningInfo.Networkhashps
 
-	_, rpcResponse, _, err = p.DaemonManager.Cmd("submitblock", []interface{}{})
-	if err != nil {
-		log.Panic(err)
-	}
-
+	_, rpcResponse, _ = p.DaemonManager.Cmd("submitblock", []interface{}{})
 	if rpcResponse == nil || rpcResponse.Error == nil {
 		log.Error("Could not start pool, error with init batch RPC call: " + utils.JsonifyIndentString(rpcResponse))
 		return
@@ -197,22 +279,14 @@ func (p *Pool) DetectCoinData() {
 		log.Fatal("Could not detect block submission RPC method, " + utils.JsonifyIndentString(rpcResponse))
 	}
 
-	_, rpcResponse, _, err = p.DaemonManager.Cmd("getwalletinfo", []interface{}{})
-	if err != nil {
-		log.Panic(err)
-	}
-
-	if rpcResponse == nil || rpcResponse.Error != nil {
+	_, rpcResponse, _ = p.DaemonManager.Cmd("getwalletinfo", []interface{}{})
+	if rpcResponse.Error != nil || rpcResponse == nil {
 		log.Error("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
 		return
 	}
 
-	_, rpcResponse, _, err = p.DaemonManager.Cmd("getinfo", []interface{}{})
-	if err != nil {
-		log.Panic(err)
-	}
-
-	if rpcResponse != nil && rpcResponse.Error == nil {
+	_, rpcResponse, _ = p.DaemonManager.Cmd("getinfo", []interface{}{})
+	if rpcResponse.Error == nil && rpcResponse != nil {
 		getInfo := daemons.BytesToGetInfo(rpcResponse.Result)
 
 		p.Options.Coin.Testnet = getInfo.Testnet
@@ -221,20 +295,14 @@ func (p *Pool) DetectCoinData() {
 
 		p.Stats.Connections = getInfo.Connections
 	} else {
-		_, rpcResponse, _, err := p.DaemonManager.Cmd("getnetworkinfo", []interface{}{})
-		if err != nil {
-			log.Panic(err)
-		}
+		_, rpcResponse, _ := p.DaemonManager.Cmd("getnetworkinfo", []interface{}{})
 		if rpcResponse.Error != nil || rpcResponse == nil {
 			log.Error("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
 			return
 		}
 		getNetworkInfo := daemons.BytesToGetNetworkInfo(rpcResponse.Result)
 
-		_, rpcResponse, _, err = p.DaemonManager.Cmd("getblockchaininfo", []interface{}{})
-		if err != nil {
-			log.Panic(err)
-		}
+		_, rpcResponse, _ = p.DaemonManager.Cmd("getblockchaininfo", []interface{}{})
 		if rpcResponse.Error != nil || rpcResponse == nil {
 			log.Error("Could not start pool, error with init batch RPC call: " + string(utils.Jsonify(rpcResponse)))
 			return
@@ -281,7 +349,11 @@ func (p *Pool) OutputPoolInfo() {
 }
 
 func (p *Pool) CheckAllReady() {
-	results, _ := p.DaemonManager.CmdAll("getblocktemplate", []interface{}{map[string]interface{}{"capabilities": []string{"coinbasetxn", "workid", "coinbase/append"}, "rules": []string{"segwit"}}})
+	rules := []string{"segwit"}
+	if p.Options.Coin.GBTRules != nil {
+		rules = p.Options.Coin.GBTRules
+	}
+	_, results := p.DaemonManager.CmdAll("getblocktemplate", []interface{}{map[string]interface{}{"capabilities": []string{"coinbasetxn", "workid", "coinbase/append"}, "rules": rules}})
 	for i := range results {
 		if results[i] == nil {
 			log.Fatalf("daemon %s is not available", p.DaemonManager.Daemons[i])

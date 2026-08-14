@@ -8,6 +8,11 @@ type Options struct {
 	DisablePayment bool         `json:"disablePayment"`
 	Coin           *CoinOptions `json:"coin"`
 
+	// Engine selects the mining-model engine. Empty or "gbt" (default) is the
+	// built-in Bitcoin getblocktemplate flow. Other values (e.g. "ethash") name
+	// a pluggable engine.Engine — see docs/PLUGGABLE_ENGINES_zh.md.
+	Engine string `json:"engine"`
+
 	PoolAddress      *Recipient   `json:"poolAddress"`
 	RewardRecipients []*Recipient `json:"rewardRecipients"`
 

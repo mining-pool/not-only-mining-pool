@@ -77,12 +77,12 @@ func (pm *PaymentManager) Serve() {
 
 func (pm *PaymentManager) validatePoolAddress() error {
 	// validate addr
-	i, result, _, err := pm.dm.Cmd("getaddressinfo", []interface{}{pm.PoolAddress.Address}) // DEPRECATION WARNING: Parts of this command(validateaddress) have been deprecated and moved to getaddressinfo.
-	if err != nil {
-		return err
+	instance, result, _ := pm.dm.Cmd("getaddressinfo", []interface{}{pm.PoolAddress.Address}) // DEPRECATION WARNING: Parts of this command(validateaddress) have been deprecated and moved to getaddressinfo.
+	if result == nil {
+		return fmt.Errorf("no response from payment processing daemon on getaddressinfo")
 	}
 	if result.Error != nil {
-		return fmt.Errorf("error with payment processing daemon %s, err: %s", pm.dm.Daemons[i].String(), result.Error.Message)
+		return fmt.Errorf("error with payment processing daemon %s, err: %s", instance.String(), result.Error.Message)
 	}
 
 	va, err := daemons.BytesToValidateAddress(result.Result)
@@ -91,7 +91,7 @@ func (pm *PaymentManager) validatePoolAddress() error {
 	}
 
 	if !va.IsMine {
-		return fmt.Errorf("daemon %s does not own pool address, payment processing can not be done", pm.dm.Daemons[i].String())
+		return fmt.Errorf("daemon %s does not own pool address, payment processing can not be done", instance.String())
 	}
 
 	return nil
@@ -100,13 +100,12 @@ func (pm *PaymentManager) validatePoolAddress() error {
 
 func (pm *PaymentManager) setMultiplier() error {
 	// validate balance
-	i, result, _, err := pm.dm.Cmd("getbalance", []interface{}{})
-	if err != nil {
-		return err
+	instance, result, _ := pm.dm.Cmd("getbalance", []interface{}{})
+	if result == nil {
+		return fmt.Errorf("no response from payment processing daemon on getbalance")
 	}
-
 	if result.Error != nil {
-		return fmt.Errorf("error with payment processing daemon %s, err: %s", pm.dm.Daemons[i].String(), result.Error.Message)
+		return fmt.Errorf("error with payment processing daemon %s, err: %s", instance.String(), result.Error.Message)
 	}
 
 	//gb, err := daemons.BytesToGetBalance(result.Result)
@@ -131,7 +130,6 @@ func (pm *PaymentManager) setMultiplier() error {
 	return nil
 }
 
-//
 func (pm *PaymentManager) processPayments() error {
 	// PPLNS solution:
 	//
@@ -325,9 +323,9 @@ type Worker struct {
 
 // Calculate if any payments are ready to be sent and trigger them sending
 // Get balance different for each address and pass it along as object of latest balances such as
-//{worker1: balance1, worker2, balance2}
-//when deciding the sent balance, it the difference should be -1*(amount they had in db),
-//if not sending the balance, the differnce should be +(the amount they earned this round)
+// {worker1: balance1, worker2, balance2}
+// when deciding the sent balance, it the difference should be -1*(amount they had in db),
+// if not sending the balance, the differnce should be +(the amount they earned this round)
 func (pm *PaymentManager) trySend(workers map[string]*Worker, pendingBlocks []*PendingBlock, withholdPercent float64) (map[string]*Worker, []*PendingBlock, error) {
 	var addressAmounts = map[string]float64{}
 	var totalSent = uint64(0)
@@ -349,9 +347,9 @@ func (pm *PaymentManager) trySend(workers map[string]*Worker, pendingBlocks []*P
 		return workers, pendingBlocks, nil
 	}
 
-	_, result, _, err := pm.dm.Cmd("sendmany", []interface{}{"", addressAmounts}) // use default "" account (not addr)
-	if err != nil {
-		return nil, nil, err
+	_, result, _ := pm.dm.Cmd("sendmany", []interface{}{"", addressAmounts}) // use default "" account (not addr)
+	if result == nil {
+		return nil, nil, fmt.Errorf("no response from payment processing daemon on sendmany")
 	}
 
 	//Check if payments failed because wallet doesn't have enough coins to pay for tx fees
@@ -363,7 +361,7 @@ func (pm *PaymentManager) trySend(workers map[string]*Worker, pendingBlocks []*P
 
 	if result.Error != nil {
 		log.Error("Error trying to send payments with RPC sendmany ", utils.Jsonify(result.Error))
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("sendmany RPC error: %s", result.Error.Message)
 	}
 	log.Debug("Sent out a total of ", pm.SatToCoin(totalSent), " to ", len(addressAmounts), " workers")
 	if withholdPercent > 0 {

@@ -79,7 +79,7 @@ func TestGetTransactionBytes(t *testing.T) {
 		t.Log(hex.EncodeToString(b[i]))
 	}
 
-	merkleTree := merkletree.NewMerkleTree(GetTransactionBytes(txs))
+	merkleTree := merkletree.NewMerkleTree(GetTransactionBytes(txs), nil)
 	t.Log(merkleTree.Steps)
 	merkleBranch := merkletree.GetMerkleHashes(merkleTree.Steps)
 	t.Log(merkleBranch)
@@ -162,7 +162,7 @@ func TestJob_SerializeHeader(t *testing.T) {
 	//for i:=0; i<len(txsBytes); i++ {
 	//	t.Log(hex.EncodeToString(txsBytes[i]))
 	//}
-	mt := merkletree.NewMerkleTree(txsBytes)
+	mt := merkletree.NewMerkleTree(txsBytes, nil)
 	for i := 0; i < len(mt.Steps); i++ {
 		t.Log(hex.EncodeToString(mt.Steps[i]))
 	}

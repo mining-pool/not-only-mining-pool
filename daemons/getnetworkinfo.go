@@ -24,7 +24,8 @@ type GetNetworkInfo struct {
 	Relayfee       float64       `json:"relayfee"`
 	Incrementalfee float64       `json:"incrementalfee"`
 	Localaddresses []interface{} `json:"localaddresses"`
-	Warnings       string        `json:"warnings"`
+	// Bitcoin Core <29 returns a string; >=29 returns an array of strings.
+	Warnings json.RawMessage `json:"warnings"`
 }
 
 func BytesToGetNetworkInfo(b []byte) *GetNetworkInfo {

@@ -9,6 +9,9 @@ import (
 )
 
 func TestNewPeer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires a live p2p node on :19335")
+	}
 	var options config.P2POptions
 	json.Unmarshal([]byte(`
 {

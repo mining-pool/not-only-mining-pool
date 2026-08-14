@@ -10,9 +10,9 @@ import (
 func (dm *DaemonManager) SubmitBlock(blockHex string) {
 	var results []*JsonRpcResponse
 	if dm.Coin.NoSubmitBlock {
-		results, _ = dm.CmdAll("getblocktemplate", []interface{}{map[string]interface{}{"mode": "submit", "data": blockHex}})
+		_, results = dm.CmdAll("getblocktemplate", []interface{}{map[string]interface{}{"mode": "submit", "data": blockHex}})
 	} else {
-		results, _ = dm.CmdAll("submitblock", []interface{}{blockHex})
+		_, results = dm.CmdAll("submitblock", []interface{}{blockHex})
 	}
 
 	for i := range results {
@@ -26,16 +26,10 @@ func (dm *DaemonManager) SubmitBlock(blockHex string) {
 		} else {
 			var result string
 			err := json.Unmarshal(results[i].Result, &result)
-			if err == nil && result == "rejected" {
-				log.Warn("Daemon instance rejected a supposedly valid block")
-			}
-
-			if err == nil && result == "invalid" {
-				log.Warn("Daemon instance rejected an invalid block")
-			}
-
-			if err == nil && result == "inconclusive" {
-				log.Warn("Daemon instance warns an inconclusive block")
+			// submitblock returns null on success, otherwise a reject reason
+			// string (e.g. "high-hash", "bad-txnmrklroot", "duplicate").
+			if err == nil && result != "" {
+				log.Error("Daemon rejected the block: " + result)
 			}
 		}
 	}

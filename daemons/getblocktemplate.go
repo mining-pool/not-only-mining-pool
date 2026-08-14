@@ -93,8 +93,12 @@ type GetBlockTemplate struct {
 
 // then JobManager.ProcessTemplate(rpcData)
 func (dm *DaemonManager) GetBlockTemplate() (getBlockTemplate *GetBlockTemplate, err error) {
-	instance, result, _, err := dm.Cmd("getblocktemplate",
-		[]interface{}{map[string]interface{}{"capabilities": []string{"coinbasetxn", "workid", "coinbase/append"}, "rules": []string{"segwit"}}},
+	rules := []string{"segwit"}
+	if dm.Coin != nil && dm.Coin.GBTRules != nil {
+		rules = dm.Coin.GBTRules
+	}
+	instance, result, _ := dm.Cmd("getblocktemplate",
+		[]interface{}{map[string]interface{}{"capabilities": []string{"coinbasetxn", "workid", "coinbase/append"}, "rules": rules}},
 	)
 	if err != nil {
 		return nil, err

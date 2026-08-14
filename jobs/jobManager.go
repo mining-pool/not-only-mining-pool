@@ -2,6 +2,12 @@ package jobs
 
 import (
 	"encoding/hex"
+	"math/big"
+	"net"
+	"strconv"
+	"strings"
+	"time"
+
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/mining-pool/not-only-mining-pool/algorithm"
 	"github.com/mining-pool/not-only-mining-pool/config"
@@ -9,11 +15,6 @@ import (
 	"github.com/mining-pool/not-only-mining-pool/storage"
 	"github.com/mining-pool/not-only-mining-pool/types"
 	"github.com/mining-pool/not-only-mining-pool/utils"
-	"math/big"
-	"net"
-	"strconv"
-	"strings"
-	"time"
 )
 
 var log = logging.Logger("jobMgr")
@@ -46,6 +47,13 @@ func NewJobManager(options *config.Options, dm *daemons.DaemonManager, storage *
 	placeholder, _ := hex.DecodeString("f000000ff111111f")
 	extraNonce1Generator := NewExtraNonce1Generator()
 
+	// Coinbase txid + merkle tree hasher (defaults to double-SHA256; e.g.
+	// Groestlcoin uses a single "sha256").
+	coinbaseHasher := utils.Sha256d
+	if name := options.Algorithm.CoinbaseHasher; name != "" {
+		coinbaseHasher = algorithm.GetHashFunc(name)
+	}
+
 	return &JobManager{
 		PoolAddress: options.PoolAddress,
 
@@ -55,7 +63,7 @@ func NewJobManager(options *config.Options, dm *daemons.DaemonManager, storage *
 		ExtraNonce2Size:       len(placeholder) - extraNonce1Generator.Size,
 		CurrentJob:            nil,
 		ValidJobs:             make(map[string]*Job),
-		CoinbaseHasher:        utils.Sha256d,
+		CoinbaseHasher:        coinbaseHasher,
 		Storage:               storage,
 		DaemonManager:         dm,
 	}
@@ -92,7 +100,7 @@ func (jm *JobManager) ProcessShare(share *types.Share) {
 }
 
 func (jm *JobManager) CheckBlockAccepted(blockHash string) (isAccepted bool, tx string) {
-	results, _ := jm.DaemonManager.CmdAll("getblock", []interface{}{blockHash})
+	_, results := jm.DaemonManager.CmdAll("getblock", []interface{}{blockHash})
 
 	isAccepted = true
 	for i := range results {
@@ -123,6 +131,7 @@ func (jm *JobManager) UpdateCurrentJob(rpcData *daemons.GetBlockTemplate) {
 		jm.Options.Coin.Reward,
 		jm.Options.Coin.TxMessages,
 		jm.Options.RewardRecipients,
+		jm.CoinbaseHasher,
 	)
 
 	jm.CurrentJob = tmpBlockTemplate
@@ -143,6 +152,7 @@ func (jm *JobManager) CreateNewJob(rpcData *daemons.GetBlockTemplate) {
 		jm.Options.Coin.Reward,
 		jm.Options.Coin.TxMessages,
 		jm.Options.RewardRecipients,
+		jm.CoinbaseHasher,
 	)
 
 	jm.CurrentJob = tmpBlockTemplate
@@ -274,6 +284,7 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 	headerHash := algorithm.GetHashFunc(jm.Options.Algorithm.Name)(headerBytes)
 	headerHashBigInt := new(big.Int).SetBytes(utils.ReverseBytes(headerHash))
 
+
 	bigShareDiff := new(big.Float).Quo(
 		new(big.Float).SetInt(new(big.Int).Mul(algorithm.MaxTargetTruncated, big.NewInt(1<<jm.Options.Algorithm.Multiplier))),
 		new(big.Float).SetInt(headerHashBigInt),
@@ -284,7 +295,10 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 	if job.Target.Cmp(headerHashBigInt) > 0 {
 		blockHex := hex.EncodeToString(job.SerializeBlock(headerBytes, coinbaseBytes))
 		var blockHash string
-		if jm.Options.Algorithm.SHA256dBlockHasher {
+		if jm.Options.Algorithm.BlockHasher != "" {
+			// explicit block-id algorithm, e.g. GRS uses a single "sha256"
+			blockHash = hex.EncodeToString(utils.ReverseBytes(algorithm.GetHashFunc(jm.Options.Algorithm.BlockHasher)(headerBytes)))
+		} else if jm.Options.Algorithm.SHA256dBlockHasher {
 			// LTC
 			blockHash = hex.EncodeToString(utils.ReverseBytes(utils.Sha256d(headerBytes)))
 		} else {
