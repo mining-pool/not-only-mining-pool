@@ -68,12 +68,12 @@ gen() { # <n> <addr>
   w generatetoaddress "$1" "$2" >/dev/null 2>&1 || w generate "$1" >/dev/null 2>&1
 }
 gen 12 "$POOL_ADDR"
-# Rapid regtest generation pushes median-time-past ahead of wall-clock; wait for
-# it to catch up so the node can build a valid template (else getblocktemplate
-# fails "time-too-old" and the engine can't start).
-for i in $(seq 1 60); do
-  mt=$(cli getblockchaininfo 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('mediantime',0))" 2>/dev/null || echo 0)
-  [ "$(date +%s)" -gt "${mt:-0}" ] && break; sleep 1
+# Rapid regtest generation can push the chain's median-time-past ahead of the
+# node's clock, so getblocktemplate fails "time-too-old". Wait until wall-clock is
+# safely past the tip block's median-time-past.
+mtp_of() { cli getblockheader "$(cli getbestblockhash)" 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('mediantime',0))" 2>/dev/null || echo 0; }
+for i in $(seq 1 120); do
+  [ "$(date +%s)" -gt "$(( $(mtp_of) + 1 ))" ] && break; sleep 1
 done
 H=$(cli getblockcount)
 BLOCKHASH=$(cli getblockhash "$H")
@@ -81,7 +81,7 @@ TXID=$(cli getblock "$BLOCKHASH" | python3 -c "import sys,json;print(json.load(s
 [ -z "$TXID" ] && { fail "$SYM: could not resolve coinbase txid"; exit 1; }
 log "$SYM: node up height=$H pool=$POOL_ADDR miner=$MINER_ADDR block=$H tx=$TXID balance=$(w getbalance 2>/dev/null)"
 
-echo "$SYM DIAG: now=$(date +%s) chaininfo=$(cli getblockchaininfo 2>/dev/null | python3 -c 'import sys,json;d=json.load(sys.stdin);print("mediantime",d.get("mediantime"),"blocks",d.get("blocks"))' 2>/dev/null)" >&2
+echo "$SYM DIAG: now=$(date +%s) tiptime=$(cli getblock "$(cli getbestblockhash)" 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin).get("time"))' 2>/dev/null) mtp=$(mtp_of)" >&2
 echo "$SYM DIAG: raw getblocktemplate ->" >&2
 cli getblocktemplate '{"capabilities":["coinbasetxn"]}' 2>&1 | head -c 400 >&2; echo >&2
 
