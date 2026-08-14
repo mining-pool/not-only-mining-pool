@@ -137,8 +137,14 @@ valid/invalid submit 回包、未授权拒绝。
 **share 落库**：引擎模式的有效/无效 share 现已写入 redis（`stratum/engine.go`
 submit 处理里的 `go sc.DB.PutShare(...)`），复用 GBT 的 `PutShare`——统计（算力、
 有效/无效计数）、按 `miner.rig` 拆分、轮次贡献与 PPLNS 日志均可用，且按**分配难度**
-计量（非达成难度）。出块/派奖仍取决于各币种钱包模型：引擎 share 不带 bitcoin 式
-`BlockHex`/coinbase txid，故经 bitcoin-family payer 自动派奖需按币种单独接入。
+计量（非达成难度）。
+
+**派奖**：bitcoin-family 的引擎币（如 Ravencoin/kawpow）已打通自动派奖——
+kawpow 出块时经 `dm.CheckBlockAccepted` 解析 coinbase txid 填入 `share.TxHash`，
+`PutShare` 据此封轮并记 pending block，`NewEnginePool` 在 `disablePayment:false`
+时启动复用的 PROP/PPLNS/SOLO/PPS payer。非 bitcoin 系引擎（ethash/randomx/kaspa）
+的 share 不带 coinbase txid，只落库计量、不入 pending，其派奖需各自接钱包模型
+（在这些币上开启 payment 会在 `PaymentManager.Init` 处 fail-fast）。
 
 > 后续仍建议做"Step 0 重构"（抽 `gbt.Engine`），让两条通路都走 `engine.Engine`，彻底解耦。
 

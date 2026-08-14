@@ -176,6 +176,31 @@ func (dm *DaemonManager) CmdAll(method string, params []interface{}) (responses 
 	return responses, results
 }
 
+// CheckBlockAccepted asks every daemon for the block and reports whether they
+// all have it (accepted into the chain) along with its coinbase transaction id
+// (the block's first tx), which the payout processor needs to attribute the
+// reward. tx is empty when no daemon could return the block.
+func (dm *DaemonManager) CheckBlockAccepted(blockHash string) (isAccepted bool, tx string) {
+	_, results := dm.CmdAll("getblock", []interface{}{blockHash})
+
+	isAccepted = true
+	for i := range results {
+		isAccepted = isAccepted && results[i] != nil && results[i].Error == nil
+	}
+
+	for i := range results {
+		if results[i] == nil {
+			continue
+		}
+		gb := BytesToGetBlock(results[i].Result)
+		if gb.Tx != nil {
+			return isAccepted, gb.Tx[0]
+		}
+	}
+
+	return isAccepted, ""
+}
+
 func (dm *DaemonManager) CheckStatusCode(statusCode int) error {
 	switch statusCode / 100 {
 	case 2:

@@ -81,7 +81,7 @@ func (jm *JobManager) ProcessShare(share *types.Share) {
 		log.Info("submitting new Block: ", share.BlockHex)
 		jm.DaemonManager.SubmitBlock(share.BlockHex)
 
-		isAccepted, tx = jm.CheckBlockAccepted(share.BlockHash)
+		isAccepted, tx = jm.DaemonManager.CheckBlockAccepted(share.BlockHash)
 		share.TxHash = tx
 		if isAccepted {
 			log.Info("Block ", share.BlockHash, " Accepted! generation tx: ", share.TxHash, ". Wait for pendding!")
@@ -97,28 +97,6 @@ func (jm *JobManager) ProcessShare(share *types.Share) {
 	// notValidBlock but isValidShare
 	go jm.Storage.PutShare(share, isAccepted)
 
-}
-
-func (jm *JobManager) CheckBlockAccepted(blockHash string) (isAccepted bool, tx string) {
-	_, results := jm.DaemonManager.CmdAll("getblock", []interface{}{blockHash})
-
-	isAccepted = true
-	for i := range results {
-		isAccepted = isAccepted && results[i] != nil && results[i].Error == nil
-	}
-
-	for i := range results {
-		if results[i] == nil {
-			continue
-		}
-
-		gb := daemons.BytesToGetBlock(results[i].Result)
-		if gb.Tx != nil {
-			return isAccepted, gb.Tx[0]
-		}
-	}
-
-	return isAccepted, ""
 }
 
 // UpdateCurrentJob updates the job when mining the same height but tx changes

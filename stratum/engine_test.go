@@ -38,6 +38,9 @@ type fakeEngine struct {
 	submits   [][]interface{}
 	valid     bool
 	shareDiff float64 // if >0, the achieved difficulty OnSubmit reports
+	blockHex  string  // if set, OnSubmit reports a block-solving share
+	txHash    string  // resolved coinbase txid (empty => non-payable block)
+	height    int64
 }
 
 func (f *fakeEngine) Name() string                     { return "fake" }
@@ -59,6 +62,12 @@ func (f *fakeEngine) OnSubmit(s engine.Session, params []interface{}) *types.Sha
 		diff = f.shareDiff
 	}
 	share := &types.Share{Miner: s.WorkerName(), RemoteAddr: s.RemoteAddr(), Diff: diff}
+	if f.blockHex != "" {
+		share.BlockHex = f.blockHex
+		share.BlockHash = "blkhash"
+		share.TxHash = f.txHash
+		share.BlockHeight = f.height
+	}
 	if !f.valid {
 		share.ErrorCode = types.ErrLowDiffShare
 	}
@@ -349,6 +358,70 @@ func TestEngineSharePersisted(t *testing.T) {
 	if ok, _ := mr.SIsMember("TESTENG:pool:miners", "minerAddr"); !ok {
 		t.Error("minerAddr should be indexed in pool:miners")
 	}
+}
+
+// A bitcoin-family engine block (coinbase txid resolved) is sealed as a pending,
+// payable block; a block without a txid is kept as an ordinary share only.
+func TestEngineBlockShareRecording(t *testing.T) {
+	newDB := func(t *testing.T) (*storage.DB, *miniredis.Miniredis) {
+		mr, err := miniredis.Run()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(mr.Close)
+		host, portStr, _ := net.SplitHostPort(mr.Addr())
+		port, _ := strconv.Atoi(portStr)
+		return storage.NewStorage("TESTENG", &config.RedisOptions{Network: "tcp", Host: host, Port: port}), mr
+	}
+	submit := func(sc *Client) {
+		sc.IsAuthorized = true
+		sc.WorkerName = "minerAddr"
+		sc.CurrentDifficulty = big.NewFloat(8)
+		sc.HandleMessage(req("eth_submitWork", "0xn", "0xh", "0xm"))
+	}
+
+	t.Run("payable block becomes pending", func(t *testing.T) {
+		db, mr := newDB(t)
+		sc, _ := newEngineTestClient(&fakeEngine{valid: true, blockHex: "00aa", txHash: "coinbaseTx", height: 42})
+		sc.DB = db
+		submit(sc)
+		var members []string
+		for i := 0; i < 100; i++ {
+			members, _ = mr.SMembers("TESTENG:blocks:pending")
+			if len(members) > 0 {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if len(members) != 1 || !bytes.Contains([]byte(members[0]), []byte("coinbaseTx")) {
+			t.Fatalf("expected one pending block carrying the coinbase txid, got %v", members)
+		}
+		if !mr.Exists("TESTENG:shares:round42") {
+			t.Error("the block's round should be sealed to round42")
+		}
+	})
+
+	t.Run("block without txid stays a share", func(t *testing.T) {
+		db, mr := newDB(t)
+		sc, _ := newEngineTestClient(&fakeEngine{valid: true, blockHex: "00aa", txHash: "", height: 42})
+		sc.DB = db
+		submit(sc)
+		// the share is still recorded...
+		var got string
+		for i := 0; i < 100; i++ {
+			if got = mr.HGet("TESTENG:shares:roundCurrent", "minerAddr"); got != "" {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if got != "8" {
+			t.Errorf("share contribution = %q, want 8", got)
+		}
+		// ...but no payable pending block is recorded.
+		if members, _ := mr.SMembers("TESTENG:blocks:pending"); len(members) != 0 {
+			t.Errorf("a block without a coinbase txid must not be recorded as pending: %v", members)
+		}
+	})
 }
 
 // After a vardiff retarget raises the difficulty, a share that still meets the

@@ -324,7 +324,13 @@ func (e *Engine) OnSubmit(s engine.Session, params []interface{}) *types.Share {
 		e.dm.SubmitBlock(blockHex)
 		share.BlockHex = blockHex
 		share.BlockHash = hex.EncodeToString(utils.ReverseBytes(utils.Sha256d(j.fullHeader(nonce, mix))))
-		log.Warn("kawpow block candidate at height ", j.height, " hash ", share.BlockHash)
+		// Ravencoin is bitcoin-family, so resolve the coinbase txid the payout
+		// processor needs to attribute this block's reward (empty if the node
+		// rejected it — the share stays a normal contribution then).
+		if _, tx := e.dm.CheckBlockAccepted(share.BlockHash); tx != "" {
+			share.TxHash = tx
+		}
+		log.Warn("kawpow block candidate at height ", j.height, " hash ", share.BlockHash, " coinbase ", share.TxHash)
 	}
 
 	return share

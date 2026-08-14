@@ -228,9 +228,17 @@ func (sc *Client) handleEngineMessage(message *daemons.JsonRpcRequest) {
 			// dominate a PROP/PPLNS round (matches the GBT accounting fix).
 			share.Miner, share.Rig = splitWorker(sc.WorkerName)
 			share.Diff = sc.creditedEngineDiff(achievedDiff)
+			// A block is payable (recorded as pending) only if the engine resolved
+			// its coinbase txid, i.e. a bitcoin-family coin like Ravencoin whose
+			// wallet the payout processor can drive. Other engines' blocks are left
+			// as ordinary share contributions (their payout is coin-specific).
+			blockAccepted := share.TxHash != ""
+			if share.BlockHex != "" && !blockAccepted {
+				share.BlockHex = ""
+			}
 			log.Info(sc.WorkerName, " submitted a valid engine share, diff=", share.Diff)
 			if sc.DB != nil {
-				go sc.DB.PutShare(share, true)
+				go sc.DB.PutShare(share, blockAccepted)
 			}
 			sc.applyEngineVarDiff()
 		} else {
