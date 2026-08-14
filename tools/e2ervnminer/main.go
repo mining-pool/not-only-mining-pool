@@ -50,11 +50,14 @@ func main() {
 	headerHash, _ := hex.DecodeString(strings.TrimPrefix(p[1].(string), "0x"))
 	height := uint64(toF(p[5]))
 	bits := strings.TrimPrefix(p[6].(string), "0x")
-	// mine to the assigned share target (notify param 3) — as a real miner does.
-	// It is <= the network target, so a share below it is also a valid block.
+	// Mine to the pool-assigned share target (notify param 3). On regtest the pool
+	// diff is deliberately tiny, so a share is found near-instantly; if that share
+	// also clears the network target the engine submits it as a block. (Mining to
+	// the far harder network target would make kawpow — which is CPU-heavy — take
+	// impractically long.)
 	target, _ := new(big.Int).SetString(strings.TrimPrefix(p[3].(string), "0x"), 16)
-	if nt := bitsToTarget(bits); target == nil || target.Sign() == 0 || nt.Cmp(target) < 0 {
-		target = nt
+	if target == nil || target.Sign() == 0 {
+		target = bitsToTarget(bits)
 	}
 	fmt.Printf("[rvn] job=%s height=%d headerHash=%s target=%x\n", jobID, height, p[1].(string)[:14], target)
 
