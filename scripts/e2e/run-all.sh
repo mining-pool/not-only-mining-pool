@@ -24,19 +24,20 @@ GBT_COINS=(
   "Ravencoin    RVN  ravend        raven-cli       kawpow    19843 3048  peers=2 engine=kawpow waitReady=60 diff=0.00000001"
 )
 
-# --- engine coins (dedicated runners; non-bitcoind node interaction) --------
+# --- dedicated runners (non-bitcoind node interaction, or a special scenario) --
 # sym  script          rpcport sport
 ENGINE_COINS=(
   "ETC  ethash.sh      8545  3045"
   "XMR  cryptonote.sh  18081 3040"
   "KAS  kaspa.sh       16110 3044"
+  "PAY  payment.sh     18455 3050"  # payout processor: mine → mature → sendmany
 )
 
 declare -a RESULTS
 record() { # <sym> <output>
   local sym="$1" out="$2"
   if   echo "$out" | grep -q "✅"; then
-    echo "$out" | grep -E "✅|⏭"; RESULTS+=("$sym ✅ real block")
+    echo "$out" | grep -E "✅|⏭"; RESULTS+=("$sym ✅ pass")
   elif echo "$out" | grep -q "⏭"; then
     echo "$out" | grep -E "⏭"; RESULTS+=("$sym ⏭ daemon not installed")
   else

@@ -78,9 +78,13 @@ core-geth) must be on `PATH` too. Then run `scripts/e2e/run-all.sh`.
   (`--mine --miner.threads 0`, remote sealer only, so only the pool can seal),
   monerod regtest (mints a valid pay-to address via `monero-wallet-rpc`), kaspad
   simnet (`kaspawallet` address, `KASPA_ALLOW_UNSYNCED=1`).
-- **`run-all.sh`** — orchestrates all 10 coins (6 GBT + 4 engine) and prints a
-  scoreboard; exits non-zero if any coin fails (with `E2E_STRICT=1`, a skipped
-  coin also fails).
+- **`payment.sh`** — payout processor E2E on bitcoind regtest: run a
+  payment-enabled pool, mine a block to the pool address, mature the coinbase
+  (+100 blocks), and assert the pool actually pays the miner via `sendmany`
+  (checks the redis `payouts` hash and the on-chain receipt).
+- **`run-all.sh`** — orchestrates all coins (6 GBT + 4 engine) plus the payout
+  scenario and prints a scoreboard; exits non-zero if any leg fails (with
+  `E2E_STRICT=1`, a skipped leg also fails).
 
 ## GitHub Actions
 
