@@ -230,6 +230,7 @@ type PaymentUpdate struct {
 	Confirmed    []string           // pending block strings moving to confirmed
 	Orphaned     []string           // pending block strings moving to orphaned
 	DeleteRounds []uint64           // sealed round heights whose shares are now accounted
+	PPSCursor    int64              // pps: advance the credited-share cursor (0 = leave)
 }
 
 // ApplyPayments persists one payout run atomically: it overwrites each miner's
@@ -252,6 +253,9 @@ func (s *DB) ApplyPayments(u *PaymentUpdate) error {
 	}
 	for _, h := range u.DeleteRounds {
 		ppl.Del(ctx, s.coin+":shares:round"+strconv.FormatUint(h, 10))
+	}
+	if u.PPSCursor > 0 {
+		ppl.Set(ctx, s.coin+":pps:cursor", u.PPSCursor, 0)
 	}
 	_, err := ppl.Exec(ctx)
 	return err
@@ -324,6 +328,46 @@ func (s *DB) GetPPLNSShares(uptoSeq int64, window float64) (map[string]float64, 
 		}
 	}
 	return out, nil
+}
+
+// GetPPSCursor returns the highest share sequence already credited in pps mode.
+func (s *DB) GetPPSCursor() (int64, error) {
+	v, err := s.Get(context.Background(), s.coin+":pps:cursor").Int64()
+	if err == redis.Nil {
+		return 0, nil
+	}
+	return v, err
+}
+
+// GetSharesSince returns per-miner share difficulty for every logged share newer
+// than cursor, plus the highest sequence seen (so pps can advance the cursor).
+func (s *DB) GetSharesSince(cursor int64) (map[string]float64, int64, error) {
+	zs, err := s.ZRangeByScoreWithScores(context.Background(), s.coin+":shares:pplnslog", &redis.ZRangeBy{
+		Min: "(" + strconv.FormatInt(cursor, 10), // exclusive
+		Max: "+inf",
+	}).Result()
+	if err != nil {
+		return nil, cursor, err
+	}
+
+	out := make(map[string]float64)
+	maxSeq := cursor
+	for _, z := range zs {
+		m, _ := z.Member.(string)
+		p := strings.SplitN(m, ":", 3) // miner:diff:seq
+		if len(p) < 2 {
+			continue
+		}
+		diff, err := strconv.ParseFloat(p[1], 64)
+		if err != nil {
+			continue
+		}
+		out[p[0]] += diff
+		if int64(z.Score) > maxSeq {
+			maxSeq = int64(z.Score)
+		}
+	}
+	return out, maxSeq, nil
 }
 
 func (s *DB) GetRoundContrib(height uint64) (map[string]float64, error) {

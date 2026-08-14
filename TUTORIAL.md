@@ -122,8 +122,9 @@ paid via `sendmany`. Balances below `minPayment` carry over.
   "interval": 600,           // seconds between payout runs
   "minPayment": 0.05,        // min coin owed before a miner is paid (else carried over)
   "daemon": 0,               // index into daemons[] used for wallet RPC
-  "payMode": "prop",         // "prop" | "pplns" | "solo"
+  "payMode": "prop",         // "prop" | "pplns" | "solo" | "pps"
   "pplnsWindow": 0,          // pplns look-back as total share difficulty; 0 = the block's round
+  "ppsRate": 0,              // pps price per share difficulty unit (coin); required for pps
   "magnitude": 0,            // base units per coin (1e8); 0 = auto-detect
   "minConfirmations": 100,   // coinbase maturity before a reward is paid
   "addressCheckMethod": "getaddressinfo", // or "validateaddress" on older forks
@@ -139,6 +140,9 @@ paid via `sendmany`. Balances below `minPayment` carry over.
   shares across rounds (a sliding window; resists pool-hopping). `pplnsWindow: 0`
   falls back to the block's own round.
 - **`solo`** — the miner who found the block takes the whole reward.
+- **`pps`** — pay a fixed `ppsRate` per share difficulty **immediately** (each run
+  credits shares since a cursor and pays); found blocks refill the pool wallet
+  instead of being distributed, so the **pool** carries the luck variance.
 
 The remaining knobs let one binary pay out across bitcoind-family **forks** whose
 wallet RPC differs: coinbase maturity (`minConfirmations`), coin precision

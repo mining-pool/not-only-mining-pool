@@ -46,8 +46,12 @@ func NewPaymentManager(options *config.PaymentOptions, poolAddr *config.Recipien
 func (pm *PaymentManager) Init() error {
 	switch pm.options.PayMode {
 	case config.PayModeProp, config.PayModePPLNS, config.PayModeSolo:
+	case config.PayModePPS:
+		if pm.options.PPSRate <= 0 {
+			return fmt.Errorf("payMode %q requires a positive ppsRate", config.PayModePPS)
+		}
 	default:
-		return fmt.Errorf("unsupported payMode %q (want %q, %q or %q)", pm.options.PayMode, config.PayModeProp, config.PayModePPLNS, config.PayModeSolo)
+		return fmt.Errorf("unsupported payMode %q (want prop, pplns, solo or pps)", pm.options.PayMode)
 	}
 	if err := pm.validatePoolAddress(); err != nil {
 		return err
@@ -173,6 +177,10 @@ type matureBlock struct {
 // reward across that round's shares, and pay every miner over the threshold —
 // persisting balances, payouts and block state only if sendmany succeeds.
 func (pm *PaymentManager) processPayments() error {
+	if pm.options.PayMode == config.PayModePPS {
+		return pm.processPPS()
+	}
+
 	pendingBlocks, err := pm.db.GetAllPendingBlocks()
 	if err != nil {
 		return err
@@ -244,6 +252,68 @@ func (pm *PaymentManager) processPayments() error {
 	for _, mb := range matured {
 		update.Confirmed = append(update.Confirmed, mb.block.String())
 		update.DeleteRounds = append(update.DeleteRounds, mb.block.Height)
+	}
+	return pm.db.ApplyPayments(update)
+}
+
+// processPPS pays a fixed rate per share: it credits every share logged since
+// the cursor (reward = difficulty * ppsRate), pays balances over the threshold,
+// and confirms matured blocks — whose rewards refill the pool wallet rather than
+// being distributed (the pool, not the miners, carries the luck variance).
+func (pm *PaymentManager) processPPS() error {
+	cursor, err := pm.db.GetPPSCursor()
+	if err != nil {
+		return err
+	}
+	newShares, maxSeq, err := pm.db.GetSharesSince(cursor)
+	if err != nil {
+		return err
+	}
+
+	balances, err := pm.db.GetAllMinerBalances()
+	if err != nil {
+		return err
+	}
+	workers := make(map[string]*worker, len(balances))
+	for miner, bal := range balances {
+		workers[miner] = &worker{Address: miner, Balance: pm.CoinToSat(bal)}
+	}
+	for miner, diff := range newShares {
+		w := workers[miner]
+		if w == nil {
+			w = &worker{Address: miner}
+			workers[miner] = w
+		}
+		w.Reward += pm.CoinToSat(diff * pm.options.PPSRate)
+	}
+
+	update := &storage.PaymentUpdate{Balances: map[string]float64{}, Paid: map[string]float64{}, PPSCursor: maxSeq}
+
+	// Move matured blocks out of pending (their reward funds the wallet, so it is
+	// not split); orphan the rest. Nothing here is distributed to miners.
+	pendingBlocks, err := pm.db.GetAllPendingBlocks()
+	if err != nil {
+		return err
+	}
+	for _, pb := range pendingBlocks {
+		_, category, confirmations, ok := pm.classifyBlock(pb)
+		if !ok {
+			continue
+		}
+		switch {
+		case category == string(storage.Orphan) || category == string(storage.Kicked):
+			update.Orphaned = append(update.Orphaned, pb.String())
+			update.DeleteRounds = append(update.DeleteRounds, pb.Height)
+		case category == string(storage.Immature) || confirmations < pm.options.MinConfirmations:
+			// leave pending until mature
+		default:
+			update.Confirmed = append(update.Confirmed, pb.String())
+			update.DeleteRounds = append(update.DeleteRounds, pb.Height)
+		}
+	}
+
+	if err := pm.settle(workers, update, 0); err != nil {
+		return err // payout failed — leave the cursor/blocks so we retry next run
 	}
 	return pm.db.ApplyPayments(update)
 }

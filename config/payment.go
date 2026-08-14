@@ -44,14 +44,19 @@ type PaymentOptions struct {
 
 	Daemon int `json:"daemon"` // index into daemons[] used for wallet RPC (default 0)
 
-	// PayMode selects how a block's reward is attributed to miners:
+	// PayMode selects how miners are rewarded:
 	//   "prop"  (default) proportional to that block's round shares
 	//   "pplns"           proportional to the last-N-difficulty window of shares
 	//   "solo"            the miner who found the block takes the whole reward
+	//   "pps"             pay a fixed rate per share immediately; found blocks
+	//                     just refill the pool wallet (the pool bears variance)
 	PayMode string `json:"payMode"`
 	// PPLNSWindow is the pplns look-back as a total share difficulty; <=0 falls
 	// back to the block's own round (so pplns degrades to prop).
 	PPLNSWindow float64 `json:"pplnsWindow"`
+	// PPSRate is the pps price paid per unit of share difficulty (in coin). It
+	// must be set (>0) when payMode is "pps".
+	PPSRate float64 `json:"ppsRate"`
 
 	// --- coin-fork configurability ---
 
@@ -103,4 +108,5 @@ const (
 	PayModeProp  = "prop"
 	PayModePPLNS = "pplns"
 	PayModeSolo  = "solo"
+	PayModePPS   = "pps"
 )

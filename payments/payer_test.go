@@ -342,6 +342,55 @@ func TestPayout_PPLNS(t *testing.T) {
 	}
 }
 
+func TestPayout_PPS(t *testing.T) {
+	// ppsRate 0.5 coin per diff unit: A(10 diff)->5, B(20 diff)->10. The found
+	// block's 50-coin reward funds the wallet and is NOT distributed.
+	h := newHarness(t, &config.PaymentOptions{MinPayment: 0, MinConfirmations: 100, PayMode: "pps", PPSRate: 0.5})
+	if err := h.pm.Init(); err != nil {
+		t.Fatal(err)
+	}
+	h.seedPPLNS("minerA", 10, 1)
+	h.seedPPLNS("minerB", 20, 2)
+	h.seedPending(400, "tx400", "minerB", 2)
+	h.wallet.gettx = generateTx(120, 50.0) // mature -> block gets confirmed
+	h.wallet.sendmany = func(_ bool, amounts map[string]float64) (string, *daemons.JsonRpcError) {
+		if amounts["minerA"] != 5.0 || amounts["minerB"] != 10.0 {
+			t.Errorf("pps payout wrong (want A=5 B=10): %v", amounts)
+		}
+		return "txid", nil
+	}
+	if err := h.pm.processPayments(); err != nil {
+		t.Fatal(err)
+	}
+	if v := h.mr.HGet("TEST:payouts", "minerB"); v != "10" {
+		t.Errorf("pps payout minerB = %q, want 10", v)
+	}
+	// block confirmed (reward funds the wallet, not split) and cursor advanced.
+	if ok, _ := h.mr.SIsMember("TEST:blocks:confirmed", (&storage.PendingBlock{Hash: "blk400", TxHash: "tx400", Height: 400, Finder: "minerB", Mark: 2}).String()); !ok {
+		t.Error("matured block should be confirmed in pps mode")
+	}
+	if got, _ := h.mr.Get("TEST:pps:cursor"); got != "2" {
+		t.Errorf("pps cursor = %q, want 2", got)
+	}
+	// re-run: no new shares -> no further payout.
+	h.wallet.SentBatches = nil
+	if err := h.pm.processPayments(); err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range h.wallet.SentBatches {
+		if len(b) > 0 {
+			t.Errorf("pps re-run must not pay already-credited shares: %v", b)
+		}
+	}
+}
+
+func TestPPS_RequiresRate(t *testing.T) {
+	h := newHarness(t, &config.PaymentOptions{PayMode: "pps"}) // ppsRate defaults to 0
+	if err := h.pm.Init(); err == nil {
+		t.Error("payMode pps without ppsRate must fail Init")
+	}
+}
+
 // --- fork configurability ---
 
 func TestForkConfig_ValidateAddressAndNoDummy(t *testing.T) {
