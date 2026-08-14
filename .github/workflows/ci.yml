@@ -67,3 +67,21 @@ jobs:
         run: docker build -t nomp-e2e -f scripts/e2e/Dockerfile .
       - name: run e2e suite (all coins)
         run: docker run --rm nomp-e2e
+
+  # Isolated engine-payout leg for a Zcash-family coin (Flux/ZelHash). Split from
+  # the main e2e job because fluxd needs ~775MB of zk params; keeping it separate
+  # means the main suite stays lean. Proves the equihash engine drives a live
+  # fluxd and the engine pool pays through the shared processor.
+  e2e-flux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: build flux e2e image
+        run: docker build -t nomp-e2e-flux -f scripts/e2e/Dockerfile.flux .
+      - name: run flux payout leg
+        run: docker run --rm nomp-e2e-flux
