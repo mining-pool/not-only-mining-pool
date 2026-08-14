@@ -61,15 +61,20 @@ trap 'cli stop >/dev/null 2>&1; pkill -9 -f "$DIR/pool" 2>/dev/null; [ "$PEERS" 
 
 log "$SYM: starting node(s)"
 mkconf "$DIR" $RPCPORT $P1
-"$DAEMON" -datadir="$DIR" -conf="$DIR/node.conf" ${PEERS:+-listen} -daemon >"$DIR/node.log" 2>&1
+# Pass rpc/port as CLI flags (network-scoped, honoured on every Core version) in
+# addition to the conf. Pre-0.17 forks (e.g. Ravencoin 4.7, a 0.16 base) ignore
+# the conf's [regtest] section, so without these flags their RPC never binds
+# where the cli expects it and the node looks "down".
+rpcflags() { echo "-rpcport=$1 -port=$2 -rpcuser=u -rpcpassword=p -rpcallowip=127.0.0.1"; }
+"$DAEMON" -datadir="$DIR" -conf="$DIR/node.conf" $(rpcflags $RPCPORT $P1) ${PEERS:+-listen} -daemon >"$DIR/node.log" 2>&1
 if [ "$PEERS" = 2 ]; then
   mkconf "$DIR2" $P2 $((P1+1))
-  "$DAEMON" -datadir="$DIR2" -conf="$DIR2/node.conf" -connect=127.0.0.1:$P1 -daemon >"$DIR2/node.log" 2>&1
+  "$DAEMON" -datadir="$DIR2" -conf="$DIR2/node.conf" $(rpcflags $P2 $((P1+1))) -connect=127.0.0.1:$P1 -daemon >"$DIR2/node.log" 2>&1
 fi
 
 [ "$WAITREADY" -gt 0 ] && { log "$SYM: warming up node (${WAITREADY}s, e.g. verthash datafile)"; }
 for i in $(seq 1 $((30+WAITREADY))); do cli getblockcount >/dev/null 2>&1 && break; sleep 1; done
-cli getblockcount >/dev/null 2>&1 || { fail "$SYM: node did not come up"; tail -5 "$DIR"/regtest/debug.log 2>/dev/null; exit 1; }
+cli getblockcount >/dev/null 2>&1 || { fail "$SYM: node did not come up"; tail -20 "$DIR/node.log" "$DIR"/regtest/debug.log 2>/dev/null; exit 1; }
 sleep 3
 
 cli createwallet pool >/dev/null 2>&1 || cli loadwallet pool >/dev/null 2>&1 || true
@@ -125,7 +130,7 @@ fi
 
 ( cd "$DIR" && "$DIR/pool" -c config.json -l info >pool.log 2>&1 & )
 for i in $(seq 1 30); do grep -q "Stratum Pool Server Started" "$DIR/pool.log" 2>/dev/null && break; sleep 1; done
-grep -q "Stratum Pool Server Started" "$DIR/pool.log" || { fail "$SYM: pool did not start"; tail -6 "$DIR/pool.log"; exit 1; }
+grep -q "Stratum Pool Server Started" "$DIR/pool.log" || { fail "$SYM: pool did not start"; tail -30 "$DIR/pool.log"; exit 1; }
 log "$SYM: pool up"
 
 H0=$(cli getblockcount)

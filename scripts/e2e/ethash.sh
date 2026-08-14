@@ -58,7 +58,7 @@ blocknum() { geth_rpc eth_blockNumber "[]" | python3 -c "import sys,json;print(i
 for i in $(seq 1 180); do
   geth_rpc eth_getWork "[]" | grep -q '"result"' && break; sleep 1
 done
-geth_rpc eth_getWork "[]" | grep -q '"result"' || { fail "$SYM: geth never served eth_getWork"; tail -15 "$DIR/node.log"; exit 1; }
+geth_rpc eth_getWork "[]" | grep -q '"result"' || { fail "$SYM: geth never served eth_getWork"; grep -iE "panic:|fatal|error|flag provided|not defined" "$DIR/node.log" | head -5; tail -25 "$DIR/node.log"; exit 1; }
 log "$SYM: node up, serving work, height=$(blocknum)"
 
 # --- pool config (engine mode) ----------------------------------------------

@@ -29,7 +29,8 @@ log "$SYM: starting kaspad --simnet"
 "$KASPAD" --simnet --appdir "$DIR/kaspad" --utxoindex --nodnsseed --nolisten \
   --rpclisten 127.0.0.1:$RPCPORT >"$DIR/node.log" 2>&1 &
 KASPAD_PID=$!
-sleep 5   # gRPC listener warmup; the engine polls once at Init.
+sleep 8   # gRPC listener warmup; the engine polls once at Init.
+kill -0 $KASPAD_PID 2>/dev/null || { fail "$SYM: kaspad exited on startup"; tail -20 "$DIR/node.log"; exit 1; }
 
 # --- mint a simnet pay-to address via kaspawallet ---------------------------
 KEYS="$DIR/keys.json"
@@ -39,8 +40,12 @@ yes '' | "$KASPAWALLET" --simnet create --password "" --keys-file "$KEYS" --yes 
   --listen 127.0.0.1:$WPORT --rpcserver 127.0.0.1:$RPCPORT >"$DIR/walletd.log" 2>&1 &
 WALLETD_PID=$!
 sleep 4
-ADDR=$("$KASPAWALLET" --simnet new-address --daemonaddress 127.0.0.1:$WPORT 2>/dev/null | grep -oE 'kaspasim:[a-z0-9]+' | head -1)
-[ -z "$ADDR" ] && { fail "$SYM: kaspawallet did not yield an address"; tail -5 "$DIR/wallet-create.log" "$DIR/walletd.log" 2>/dev/null; exit 1; }
+ADDR=$("$KASPAWALLET" --simnet new-address --daemonaddress 127.0.0.1:$WPORT 2>&1 | grep -oE 'kaspasim:[a-z0-9]+' | head -1)
+[ -z "$ADDR" ] && { fail "$SYM: kaspawallet did not yield an address";
+  echo "--- kaspawallet --help (create) ---"; "$KASPAWALLET" create --help 2>&1 | head -20;
+  echo "--- wallet-create.log ---"; cat "$DIR/wallet-create.log" 2>/dev/null;
+  echo "--- walletd.log ---"; cat "$DIR/walletd.log" 2>/dev/null;
+  echo "--- kaspad node.log tail ---"; tail -15 "$DIR/node.log" 2>/dev/null; exit 1; }
 log "$SYM: pay-to address ${ADDR:0:16}…"
 
 # --- pool config (engine mode) ----------------------------------------------
