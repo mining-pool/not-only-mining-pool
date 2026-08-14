@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Hermetic build + vet + unit tests for the default (no-cgo) build. Fast; gates
+  # every push and PR. The p2p live-node test is skipped via -short.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+      - name: build
+        run: go build ./...
+      - name: vet
+        run: go vet ./...
+      - name: test
+        run: go test -short ./...
+
+  # Build + unit tests with every engine build tag enabled. RandomX links the
+  # prebuilt static lib shipped in github.com/mining-pool/go-randomx (no local
+  # compile needed); a C toolchain is still required for the cgo glue.
+  test-cgo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+      - name: install build deps
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential
+      - name: build (all tags)
+        run: CGO_ENABLED=1 go build -tags "neoscrypt ethash randomx kaspa kawpow" ./...
+      - name: test (all tags)
+        run: CGO_ENABLED=1 go test -short -tags "neoscrypt ethash randomx kaspa kawpow" $(go list ./... | grep -v '/p2p$')
+
+  # Real-node end-to-end suite: builds the Docker image that bundles redis, the
+  # Go toolchain, and every coin daemon (regtest/simnet), then mines a real block
+  # for each coin through the pool. Heavy; runs on GitHub's amd64 runners where
+  # every bundled daemon publishes a linux binary.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: free disk space
+        # The suite writes two ~1.2GB verthash.dat files (node + pool), a RandomX
+        # dataset and an ethash DAG on top of the image; the runner's default
+        # free space is tight. Drop preinstalled SDKs to reclaim ~20-30GB.
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: build e2e image
+        run: docker build -t nomp-e2e -f scripts/e2e/Dockerfile .
+      - name: run e2e suite (all coins)
+        run: docker run --rm nomp-e2e

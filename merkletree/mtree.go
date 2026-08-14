@@ -7,20 +7,33 @@ import (
 	"github.com/mining-pool/not-only-mining-pool/utils"
 )
 
+// Hasher folds two nodes / hashes a leaf. Most coins use double-SHA256, but some
+// (e.g. Groestlcoin) build the transaction merkle tree with single SHA256.
+type Hasher func([]byte) []byte
+
 type MerkleTree struct {
-	Data  interface{}
-	Steps [][]byte
+	Data   interface{}
+	Steps  [][]byte
+	hasher Hasher
 }
 
-// NewMerkleTree receives a list of tx raw bytes and return a new MerkleTree instance
-func NewMerkleTree(data [][]byte) *MerkleTree {
+// NewMerkleTree receives a list of tx raw bytes and a node hasher. A nil hasher
+// defaults to double-SHA256 (the Bitcoin convention).
+func NewMerkleTree(data [][]byte, hasher Hasher) *MerkleTree {
+	if hasher == nil {
+		hasher = utils.Sha256d
+	}
 	return &MerkleTree{
-		Data:  data,
-		Steps: CalculateSteps(data),
+		Data:   data,
+		Steps:  CalculateSteps(data, hasher),
+		hasher: hasher,
 	}
 }
 
-func CalculateSteps(data [][]byte) [][]byte {
+func CalculateSteps(data [][]byte, hasher Hasher) [][]byte {
+	if hasher == nil {
+		hasher = utils.Sha256d
+	}
 	L := data
 	steps := make([][]byte, 0)
 	PreL := [][]byte{nil}
@@ -38,7 +51,7 @@ func CalculateSteps(data [][]byte) [][]byte {
 		Ld := make([][]byte, len(r))
 
 		for i := 0; i < len(r); i++ {
-			Ld[i] = MerkleJoin(L[r[i]], L[r[i]+1])
+			Ld[i] = hasher(bytes.Join([][]byte{L[r[i]], L[r[i]+1]}, nil))
 		}
 		L = append(PreL, Ld...)
 		Ll = len(L)
@@ -47,13 +60,10 @@ func CalculateSteps(data [][]byte) [][]byte {
 	return steps
 }
 
-func MerkleJoin(h1, h2 []byte) []byte {
-	return utils.Sha256d(bytes.Join([][]byte{h1, h2}, nil))
-}
-
 func (mt *MerkleTree) WithFirst(f []byte) []byte {
+	// mt.hasher is normalized to a non-nil func by NewMerkleTree.
 	for i := 0; i < len(mt.Steps); i++ {
-		f = utils.Sha256d(bytes.Join([][]byte{f, mt.Steps[i]}, nil))
+		f = mt.hasher(bytes.Join([][]byte{f, mt.Steps[i]}, nil))
 	}
 	return f
 }
@@ -61,8 +71,6 @@ func (mt *MerkleTree) WithFirst(f []byte) []byte {
 func GetMerkleHashes(steps [][]byte) []string {
 	hashes := make([]string, len(steps))
 	for i := 0; i < len(steps); i++ {
-		// hash := make([]byte, 32)
-		// copy(hash, steps[i])
 		hashes[i] = hex.EncodeToString(steps[i])
 	}
 
