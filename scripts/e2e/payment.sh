@@ -46,12 +46,12 @@ MINER_ADDR=$(w getnewaddress "" legacy)   # the miner's worker name == its payou
 JUNK_ADDR=$(w getnewaddress "" legacy)
 [ -z "$POOL_ADDR" ] || [ -z "$MINER_ADDR" ] && { fail "$SYM: could not get wallet addresses"; exit 1; }
 
-# pre-fund the wallet so it can cover payouts + fees, then let wall-clock catch up
+# Peg node time to wall-clock (setmocktime) so rapidly-generated maturity blocks
+# don't push the chain time ahead of the pool's nTime window (which is anchored to
+# the pool's real clock); each mode re-pegs it before mining.
+cli setmocktime "$(date +%s)" >/dev/null 2>&1
+# pre-fund the wallet so it can cover payouts + fees
 w generatetoaddress 101 "$POOL_ADDR" >/dev/null 2>&1
-for i in $(seq 1 20); do
-  ct=$(cli getblocktemplate '{"rules":["segwit"]}' 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('curtime',0))" 2>/dev/null || echo 0)
-  [ "${ct:-0}" -le "$(( $(date +%s) + 3 ))" ] && break; sleep 1
-done
 log "$SYM: node up height=$(cli getblockcount) pool=$POOL_ADDR miner=$MINER_ADDR"
 
 log "$SYM: building pool + e2eminer"
@@ -87,6 +87,7 @@ paid_gt0() { [ -n "$1" ] && python3 -c "import sys;sys.exit(0 if float('$1')>0 e
 run_mode() {
   local mode="$1"
   redis-cli keys "$COIN:*" 2>/dev/null | xargs -r redis-cli del >/dev/null 2>&1
+  cli setmocktime "$(date +%s)" >/dev/null 2>&1   # keep chain time ≈ wall-clock
   mkconfig "$mode"
   free_port "$SPORT"
   ( cd "$DIR" && "$DIR/pool" -c config.json -l info >"pool.$mode.log" 2>&1 & )
