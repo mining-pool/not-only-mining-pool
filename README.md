@@ -59,11 +59,11 @@ silently running as Bitcoin.
 
 ```bash
 # default (GBT coins + pure-Go engines)
-go build .
+go build ./cmd/nomp
 
 # with selected engines (RandomX links a prebuilt lib shipped in
 # github.com/mining-pool/go-randomx — no manual build step)
-CGO_ENABLED=1 go build -tags "ethash kaspa randomx" .
+CGO_ENABLED=1 go build -tags "ethash kaspa randomx" ./cmd/nomp
 ```
 
 ## Configure & run

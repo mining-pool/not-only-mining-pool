@@ -5,7 +5,7 @@
 ```bash
 cp coins/config.litecoin.json ../config.json   # 或拷到你运行目录
 # 编辑 config.json：换钱包地址、daemon RPC、redis
-go build . && ./not-only-mining-pool -c config.json
+go build ./cmd/nomp && ./nomp -c config.json
 ```
 
 **必须修改的字段**：`poolAddress.address`、`rewardRecipients[].address`（换成你自己的地址）、

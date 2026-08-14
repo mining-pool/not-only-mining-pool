@@ -143,7 +143,7 @@ valid/invalid submit 回包、未授权拒绝。
 
 ```bash
 # 构建（带 ethash 引擎）
-go build -tags ethash .
+go build -tags ethash ./cmd/nomp
 # 配置：engine/ethash/config.ethereumclassic.example.json 拷为 config.json 并改节点/redis
 ./not-only-mining-pool -c config.json
 ```
@@ -226,7 +226,7 @@ go build -tags ethash .
 ## 9. CryptoNote(XMR/RandomX) 引擎实现进度
 
 代码：[`engine/cryptonote/`](../engine/cryptonote/)。示例配置：`config.monero.example.json`。
-**构建**：`CGO_ENABLED=1 go build -tags randomx .`（RandomX 静态库已按平台预编译进 `github.com/mining-pool/go-randomx` 模块，直接链接）。
+**构建**：`CGO_ENABLED=1 go build -tags randomx ./cmd/nomp`（RandomX 静态库已按平台预编译进 `github.com/mining-pool/go-randomx` 模块，直接链接）。
 默认构建会注册引擎但 `Init` 明确报错提示加 tag——绝不静默放行不可验证的 share。
 
 ### 9.1 关键澄清（回应"XMR 差的也不多"）
@@ -277,7 +277,7 @@ XMRig 方言的两个特殊点已在路由层泛化支持（各有单测）：
 
 ## 10. Kaspa(kHeavyHash/blockDAG) 引擎 —— 本轮改动最大
 
-代码：[`engine/kaspa/`](../engine/kaspa/)。构建：`CGO_ENABLED=1 go build -tags kaspa .`。
+代码：[`engine/kaspa/`](../engine/kaspa/)。构建：`CGO_ENABLED=1 go build -tags kaspa ./cmd/nomp`。
 
 这是回答"KAS 为什么难"的落地：难点**不是哈希**（powkit 有 kHeavyHash），而是三处，全部用**可插拔方式**解决，没动其它引擎：
 

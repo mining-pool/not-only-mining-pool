@@ -43,7 +43,7 @@ cp coins/config.litecoin.json config.json
 #      rpcallowip=127.0.0.1
 
 # 4) build
-go build .
+go build ./cmd/nomp
 
 # 5) run
 ./not-only-mining-pool -c config.json -l info
@@ -107,7 +107,7 @@ Then set `"algorithm": { "name": "myalgo", "sha256dBlockHasher": false }`.
 Most GPU algorithms only have C implementations. Put the C source under
 `algorithm/<algo>/`, write a cgo wrapper exposing `Hash([]byte) []byte`, register it
 from an `init()` behind a build tag, and build with `CGO_ENABLED=1 go build -tags
-<algo> .`. `neoscrypt` (`github.com/sparkspay/go-neoscrypt`) is a worked example.
+<algo> ./cmd/nomp`. `neoscrypt` (`github.com/sparkspay/go-neoscrypt`) is a worked example.
 
 ## Add a category-C coin (an engine)
 

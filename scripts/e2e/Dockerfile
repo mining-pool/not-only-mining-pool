@@ -61,7 +61,7 @@ RUN go mod download
 COPY . .
 # pre-build the default pool + generic miner so `docker run` starts fast; the
 # per-coin runners rebuild with the right -tags at test time.
-RUN CGO_ENABLED=1 go build -o /usr/local/bin/nomp-pool . \
+RUN CGO_ENABLED=1 go build -o /usr/local/bin/nomp-pool ./cmd/nomp \
  && go build -o /usr/local/bin/e2eminer ./tools/e2eminer/
 # Bake the 1.2GB verthash.dat once (the VTC pool would otherwise generate it on
 # startup, far exceeding its start-up window).

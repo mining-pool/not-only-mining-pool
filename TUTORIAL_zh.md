@@ -97,7 +97,7 @@ cp coins/config.litecoin.json config.json
 #      rpcallowip=127.0.0.1
 
 # 4) 编译
-go build .
+go build ./cmd/nomp
 
 # 5) 启动
 ./not-only-mining-pool -c config.json -l info
@@ -199,7 +199,7 @@ import "github.com/mining-pool/not-only-mining-pool/algorithm/cneoscrypt"
 func init() { RegisterHash("neoscrypt", 16, cneoscrypt.Hash) }
 ```
 
-4. `CGO_ENABLED=1 go build .` 即可，`config.feathercoin.json` 直接可用。
+4. `CGO_ENABLED=1 go build ./cmd/nomp` 即可，`config.feathercoin.json` 直接可用。
 
 > **字节序坑**：Stratum 校验里 `headerHash` 会被 `utils.ReverseBytes` 反转后比对 target。你的哈希函数应返回与 sha256d 相同约定的 32 字节（内部小端、按原 C 库输出）。接入新算法后，**务必用该币真实区块头做一次已知答案回归测试**（参考 `algorithm/algorithm_test.go` 里 scrypt 的用例）。
 
@@ -235,7 +235,7 @@ func init() { RegisterHash("neoscrypt", 16, cneoscrypt.Hash) }
 
 ## 6. 上线前自检清单
 
-- [ ] `go build .` 通过；B 类币用 `CGO_ENABLED=1`。
+- [ ] `go build ./cmd/nomp` 通过；B 类币用 `CGO_ENABLED=1`。
 - [ ] 全节点已完全同步，`getblocktemplate` 能返回（钱包已解锁/有权限）。
 - [ ] 新算法跑过**已知答案回归测试**（真实区块头 → 期望 hash）。
 - [ ] `poolAddress`、`rewardRecipients` 为**你自己**的有效地址（启动时会校验，非法直接 panic）。

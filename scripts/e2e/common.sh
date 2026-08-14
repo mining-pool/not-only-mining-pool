@@ -29,7 +29,7 @@ ensure_redis() {
 # build_pool <outfile> [tags]  — build the pool binary (cgo on when tags given).
 build_pool() {
   local out="$1" tags="${2:-}"
-  ( cd "$REPO" && CGO_ENABLED=1 GOTOOLCHAIN=local go build ${tags:+-tags "$tags"} -o "$out" . )
+  ( cd "$REPO" && CGO_ENABLED=1 GOTOOLCHAIN=local go build ${tags:+-tags "$tags"} -o "$out" ./cmd/nomp )
 }
 
 # build_tool <dir> <outfile> [tags]
