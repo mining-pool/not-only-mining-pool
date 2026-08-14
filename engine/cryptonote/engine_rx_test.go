@@ -27,7 +27,7 @@ func (f fakeSession) Send(string, []interface{}) error { return nil }
 // RandomX light VM over a synthetic job: an honest share (result computed with
 // the same VM) must be accepted; duplicates and forged results must not.
 // RandomX correctness itself is pinned by the official vectors in
-// third_party/go-randomx.
+// github.com/mining-pool/go-randomx.
 func TestOnSubmitRandomXPlumbing(t *testing.T) {
 	blob := buildSyntheticBlob(t, nil)
 	p, err := parseBlockBlob(blob)

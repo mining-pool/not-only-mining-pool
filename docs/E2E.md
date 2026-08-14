@@ -46,8 +46,8 @@ isolated regtest/simnet node.
 
 `scripts/e2e/` is a fully reproducible suite with no Homebrew dependency. The
 supported path is the Docker image, which bundles every coin daemon
-(regtest/simnet), Redis, the Go toolchain, and builds `librandomx.a` for the
-container's architecture:
+(regtest/simnet), Redis, and the Go toolchain (RandomX links a prebuilt lib
+from the go-randomx module):
 
 ```bash
 docker build -t nomp-e2e -f scripts/e2e/Dockerfile .
@@ -89,7 +89,7 @@ Three gating jobs run on push / PR / manual dispatch:
 | job | content | notes |
 |-----|---------|-------|
 | `test` | `go build ./…` · `go vet ./…` · `go test -short ./…` | default (no cgo), hermetic |
-| `test-cgo` | build `librandomx.a` → build + `go test -short` with all tags | covers every engine's compile + unit tests |
+| `test-cgo` | build + `go test -short` with all tags (RandomX lib prebuilt) | covers every engine's compile + unit tests |
 | `e2e` | build the Docker image and `docker run` (real block per coin) | heavy, `timeout-minutes: 90`, amd64 runner |
 
 `-short` skips the `p2p` live-node test (needs a live node on `:19335`). Engine

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Reproducible end-to-end test for the CRYPTONOTE/RandomX engine against a real
 # monerod regtest node. Needs -tags randomx (RandomX verification links
-# third_party/go-randomx/lib/librandomx.a — see third_party/go-randomx/build.sh).
+# the prebuilt lib in github.com/mining-pool/go-randomx).
 #
 # Flow: start monerod --regtest, spin up monero-wallet-rpc just to mint a valid
 # pay-to address, run the pool, and mine one block with tools/e2exmrminer through

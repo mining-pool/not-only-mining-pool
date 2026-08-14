@@ -48,7 +48,7 @@ Bitcoin, a pluggable `engine.Engine` reuses everything except node interaction
 | `beam` | Beam (BeamHash III) | *(default)* | pure Go; TLS-JSON client transport |
 | `alephium` | Alephium (Blake3) | *(default)* | pure Go; binary protocol, multi-chain |
 | `ethash` | Ethereum Classic … | `-tags ethash` | go-etchash + go-ethereum |
-| `randomx` | Monero (CryptoNote) | `-tags randomx` | cgo, needs `librandomx.a` |
+| `randomx` | Monero (CryptoNote) | `-tags randomx` | cgo; prebuilt lib in go-randomx |
 | `kaspa` | Kaspa (kHeavyHash) | `-tags kaspa` | kaspad gRPC + consensus |
 
 The default binary stays lean; heavy dependencies are gated behind build tags.
@@ -61,12 +61,9 @@ silently running as Bitcoin.
 # default (GBT coins + pure-Go engines)
 go build .
 
-# with selected engines
-CGO_ENABLED=1 go build -tags "ethash kaspa" .
-
-# RandomX needs its static lib first (once):
-cd third_party/go-randomx && ./build.sh && cd -
-CGO_ENABLED=1 go build -tags randomx .
+# with selected engines (RandomX links a prebuilt lib shipped in
+# github.com/mining-pool/go-randomx — no manual build step)
+CGO_ENABLED=1 go build -tags "ethash kaspa randomx" .
 ```
 
 ## Configure & run
@@ -103,7 +100,7 @@ every push and PR:
 | job | what it does |
 |-----|--------------|
 | `test` | default build · vet · `go test -short` |
-| `test-cgo` | build `librandomx.a`, then build + test all engine tags |
+| `test-cgo` | build + test all engine tags (RandomX lib prebuilt in the module) |
 | `e2e` | build the Docker image and mine a real block per coin |
 
 ## Documentation

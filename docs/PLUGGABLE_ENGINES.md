@@ -74,11 +74,12 @@ pool verifies with `go-etchash` (light cache, ECIP-1099 aware) and relays via
 
 Single chain + JSON-RPC; the node fills in the coinbase and leaves only a
 `reserved_offset` for the pool. The hard parts, both solved: a RandomX cgo binding
-(`third_party/go-randomx`, RandomX v1.2.1, light-mode VM so verification needs only
+(`github.com/mining-pool/go-randomx`, RandomX v1.2.1, light-mode VM so verification needs only
 ~256MB cache) and a faithful Go port of Monero's `tree_hash` (cross-checked 16/16
 against the official C source). Dialect: XMRig — object-shaped `login`/`submit`
-params, `login` doubles as subscribe+authorize and carries the first job. Build
-needs `librandomx.a` (`cd third_party/go-randomx && ./build.sh`).
+params, `login` doubles as subscribe+authorize and carries the first job. The RandomX
+static lib is prebuilt per platform inside the go-randomx module, so `-tags
+randomx` links it directly — no build step.
 
 ### kHeavyHash — Kaspa (`engine/kaspa/`, `-tags kaspa`)
 

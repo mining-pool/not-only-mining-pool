@@ -3,7 +3,7 @@
 
 // Command e2exmrminer is a minimal CryptoNote/RandomX stratum miner (XMRig dialect)
 // for end-to-end testing the cryptonote engine against monerod regtest. Build
-// with `-tags randomx` (needs third_party/go-randomx/lib/librandomx.a).
+// with `-tags randomx` (links the prebuilt lib in github.com/mining-pool/go-randomx).
 package main
 
 import (

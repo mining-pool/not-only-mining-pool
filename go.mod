@@ -14,7 +14,7 @@ require (
 	github.com/gorilla/mux v1.8.0
 	github.com/ipfs/go-log/v2 v2.1.1
 	github.com/kaspanet/kaspad v0.12.22
-	github.com/mining-pool/go-randomx v0.0.0-20200704063145-d4e94c615e25
+	github.com/mining-pool/go-randomx v1.2.1
 	github.com/mr-tron/base58 v1.2.0
 	github.com/samli88/go-x11-hash v0.0.0-20180604013825-c37c1282f506
 	github.com/sencha-dev/powkit v0.4.3
@@ -53,5 +53,3 @@ require (
 	google.golang.org/protobuf v1.35.1 // indirect
 	honnef.co/go/tools v0.1.3 // indirect
 )
-
-replace github.com/mining-pool/go-randomx => ./third_party/go-randomx

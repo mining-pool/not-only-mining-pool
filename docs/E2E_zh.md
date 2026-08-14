@@ -53,7 +53,7 @@
 ## 复现（一键，Docker）
 
 `scripts/e2e/` 是完整可复现套件，不依赖 Homebrew。首选 Docker（自带**全部**币种守护进程
-——GBT 6 币 + 引擎 4 币——加 redis + Go，并在容器内为本机架构现编 `librandomx.a`）：
+——GBT 6 币 + 引擎 4 币——加 redis + Go，RandomX 静态库由 `go-randomx` 模块按平台预编译提供）：
 
 ```bash
 docker build -t nomp-e2e -f scripts/e2e/Dockerfile .
@@ -86,7 +86,7 @@ PATH），再 `scripts/e2e/run-all.sh`。
 | job | 内容 | 说明 |
 |-----|------|------|
 | `test` | `go build ./…` · `go vet ./…` · `go test -short ./…` | 默认（无 cgo）构建，hermetic，秒级 |
-| `test-cgo` | 现编 `librandomx.a` → 全 tag（`neoscrypt ethash randomx kaspa kawpow`）构建 + `go test -short` | 覆盖所有引擎的编译与单测 |
+| `test-cgo` | 全 tag（`neoscrypt ethash randomx kaspa kawpow`）构建 + `go test -short` | 覆盖所有引擎的编译与单测 |
 | `e2e` | 构建 `scripts/e2e/Dockerfile` 镜像并 `docker run`（全部币真实出块）| 重型，`timeout-minutes: 90`，跑在 amd64 runner |
 
 `-short` 会跳过 `p2p` 的实节点测试（需 :19335 上有活节点）。引擎守护进程按 arch 尽力下载；某 arch

@@ -95,7 +95,7 @@ func (e *Engine) ObjectParams() bool { return true }
 
 func (e *Engine) Init(opts *config.Options) error {
 	if newPowHasher == nil {
-		return errors.New("cryptonote engine requires RandomX: rebuild with `-tags randomx` (needs lib/librandomx.a, see third_party/go-randomx/build.sh)")
+		return errors.New("cryptonote engine requires RandomX: rebuild with `-tags randomx`")
 	}
 	pow, err := newPowHasher()
 	if err != nil {

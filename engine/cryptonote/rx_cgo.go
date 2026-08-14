@@ -3,8 +3,8 @@
 
 package cryptonote
 
-// Linked only with `-tags randomx`: requires lib/librandomx.a in
-// third_party/go-randomx (see its build.sh; RandomX v1.2.1).
+// Linked only with `-tags randomx`: links the prebuilt librandomx.a shipped in
+// github.com/mining-pool/go-randomx (RandomX v1.2.1).
 import randomx "github.com/mining-pool/go-randomx"
 
 func init() {

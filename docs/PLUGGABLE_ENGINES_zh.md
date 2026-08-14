@@ -226,7 +226,7 @@ go build -tags ethash .
 ## 9. CryptoNote(XMR/RandomX) 引擎实现进度
 
 代码：[`engine/cryptonote/`](../engine/cryptonote/)。示例配置：`config.monero.example.json`。
-**构建**：`CGO_ENABLED=1 go build -tags randomx .`（需先 `cd third_party/go-randomx && ./build.sh` 产出 `lib/librandomx.a`）。
+**构建**：`CGO_ENABLED=1 go build -tags randomx .`（RandomX 静态库已按平台预编译进 `github.com/mining-pool/go-randomx` 模块，直接链接）。
 默认构建会注册引擎但 `Init` 明确报错提示加 tag——绝不静默放行不可验证的 share。
 
 ### 9.1 关键澄清（回应"XMR 差的也不多"）
@@ -235,7 +235,7 @@ go build -tags ethash .
 （`get_block_template` 连 coinbase 都替你写好，只留 `reserved_offset` 给池），引擎模型完全放得下。
 真正的硬骨头只有两块，本轮都已解决：
 
-1. **RandomX 无纯 Go 实现 → 升级了 `mining-pool/go-randomx` 绑定**（见 `third_party/go-randomx`，
+1. **RandomX 无纯 Go 实现 → 升级了 `mining-pool/go-randomx` 绑定**（见 `github.com/mining-pool/go-randomx`，
    可直接推回上游）：RandomX **v1.2.1**（含 Apple Silicon JIT）、新增 **light 模式 VM**
    （矿池校验只需 ~256MB cache，无需 2GB dataset；旧绑定 nil dataset 直接 panic，已修）、
    per-OS 链接 flags（macOS 不支持 `-static`，已拆分）、补 `go.mod` 与 `GetFlags()`。

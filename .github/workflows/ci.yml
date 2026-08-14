@@ -29,8 +29,9 @@ jobs:
       - name: test
         run: go test -short ./...
 
-  # Build + unit tests with every engine build tag enabled. RandomX links a
-  # static lib compiled here from tevador/RandomX (see third_party/go-randomx).
+  # Build + unit tests with every engine build tag enabled. RandomX links the
+  # prebuilt static lib shipped in github.com/mining-pool/go-randomx (no local
+  # compile needed); a C toolchain is still required for the cgo glue.
   test-cgo:
     runs-on: ubuntu-latest
     steps:
@@ -40,10 +41,7 @@ jobs:
           go-version: '1.24'
           cache: true
       - name: install build deps
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake build-essential git
-      - name: build librandomx.a
-        working-directory: third_party/go-randomx
-        run: ./build.sh
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential
       - name: build (all tags)
         run: CGO_ENABLED=1 go build -tags "neoscrypt ethash randomx kaspa kawpow" ./...
       - name: test (all tags)

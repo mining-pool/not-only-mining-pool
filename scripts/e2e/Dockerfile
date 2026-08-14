@@ -14,7 +14,7 @@ FROM golang:1.24-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       redis-server ca-certificates curl jq python3 unzip xxd bzip2 lsof \
-      cmake build-essential git \
+      build-essential git \
     && rm -rf /var/lib/apt/lists/*
 
 # --- coin daemons -----------------------------------------------------------
@@ -54,15 +54,11 @@ RUN set -eux; \
     bitcoind --version | head -1
 
 WORKDIR /src
-# cache go deps. go.mod has a `replace => ./third_party/go-randomx`, so that
-# local module's go.mod must be present before `go mod download` can resolve it.
+# cache go deps (github.com/mining-pool/go-randomx ships prebuilt per-platform
+# librandomx.a, so the -tags randomx build just links it — no cmake/build.sh).
 COPY go.mod go.sum ./
-COPY third_party ./third_party
 RUN go mod download
 COPY . .
-# Build the RandomX static lib for THIS container's arch (the committed lib is
-# built for the developer's host). Needed by the -tags randomx pool + miner.
-RUN cd third_party/go-randomx && ./build.sh
 # pre-build the default pool + generic miner so `docker run` starts fast; the
 # per-coin runners rebuild with the right -tags at test time.
 RUN CGO_ENABLED=1 go build -o /usr/local/bin/nomp-pool . \
