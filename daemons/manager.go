@@ -233,23 +233,29 @@ func (dm *DaemonManager) cmdToIndex(i int, method string, params []interface{}) 
 	})
 	if err != nil {
 		log.Error(err)
+		return dm.Daemons[i], nil, nil
 	}
 
-	var result JsonRpcResponse
+	// A nil result signals failure to the caller. Never fall through a transport,
+	// read or decode error: an unreachable daemon returns a nil response (so
+	// res.Body would panic) and a garbled body must not look like a success.
 	res, err := dm.DoHttpRequest(dm.Daemons[i], reqRawData)
-	if err != nil {
-		log.Error(err)
+	if err != nil || res == nil {
+		log.Error("daemon request failed: ", err)
+		return dm.Daemons[i], nil, nil
 	}
 
 	raw, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		log.Error(err)
+		return dm.Daemons[i], nil, res
 	}
 	res.Body = ioutil.NopCloser(bytes.NewBuffer(raw))
 
-	err = json.Unmarshal(raw, &result)
-	if err != nil {
+	var result JsonRpcResponse
+	if err := json.Unmarshal(raw, &result); err != nil {
 		log.Error(err)
+		return dm.Daemons[i], nil, res
 	}
 
 	return dm.Daemons[i], &result, res

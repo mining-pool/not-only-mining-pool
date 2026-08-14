@@ -3,7 +3,6 @@ package payments
 import (
 	"fmt"
 	"math"
-	"strings"
 	"time"
 
 	logging "github.com/ipfs/go-log/v2"
@@ -175,26 +174,14 @@ func (pm *PaymentManager) validRecipient(addr string) bool {
 }
 
 // setMagnitude fixes the base-units-per-coin factor. It honours an explicit
-// config value and otherwise derives it from the wallet's getbalance precision.
+// config value and otherwise uses the bitcoin-family standard of 1e8 (satoshis).
+// It deliberately does not infer precision from a getbalance string: JSON numbers
+// drop trailing zeros, so a "12.34" balance would wrongly imply a magnitude of 100.
 func (pm *PaymentManager) setMagnitude() error {
 	if pm.options.Magnitude > 0 {
 		pm.Magnitude = pm.options.Magnitude
 	} else {
-		instance, result := pm.cmd("getbalance", []interface{}{})
-		if result == nil {
-			return fmt.Errorf("no response from payment daemon on getbalance")
-		}
-		if result.Error != nil {
-			return fmt.Errorf("payment daemon %s: %s", instance.String(), result.Error.Message)
-		}
-		decimals := 0
-		if parts := strings.SplitN(strings.TrimSpace(string(result.Result)), ".", 2); len(parts) == 2 {
-			decimals = len(strings.TrimRight(parts[1], "\n\r "))
-		}
-		if decimals == 0 {
-			decimals = 8 // safe bitcoin default when the balance is a whole number
-		}
-		pm.Magnitude = math.Pow10(decimals)
+		pm.Magnitude = 1e8 // satoshis; set payment.magnitude for coins with other precision
 	}
 	pm.MinPayment = pm.CoinToSat(pm.options.MinPayment)
 	log.Infof("payments: magnitude=%.0f min=%d sat interval=%ds maturity=%d", pm.Magnitude, pm.MinPayment, pm.options.Interval, pm.options.MinConfirmations)

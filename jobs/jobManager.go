@@ -289,7 +289,11 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 		new(big.Float).SetInt(new(big.Int).Mul(algorithm.MaxTargetTruncated, big.NewInt(1<<jm.Options.Algorithm.Multiplier))),
 		new(big.Float).SetInt(headerHashBigInt),
 	)
-	shareDiff, _ := bigShareDiff.Float64()
+	// Share.Diff records the WORK CREDITED for this share — the miner's assigned
+	// difficulty, not the achieved hash difficulty. Crediting the achieved value
+	// would let a block-solving share (which reaches network difficulty) dominate a
+	// whole PROP/PPLNS round and give lucky hashes arbitrary PPS credit.
+	assignedDiff, _ := diff.Float64()
 
 	// Check if share is a block candidate (reaches network difficulty)
 	if job.Target.Cmp(headerHashBigInt) > 0 {
@@ -315,7 +319,7 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 
 			BlockHeight: job.GetBlockTemplate.Height,
 			BlockReward: job.GetBlockTemplate.CoinbaseValue,
-			Diff:        shareDiff,
+			Diff:        assignedDiff,
 			BlockHash:   blockHash,
 			BlockHex:    blockHex,
 		}
@@ -325,6 +329,7 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 	if new(big.Float).Quo(bigShareDiff, diff).Cmp(big.NewFloat(0.99)) < 0 {
 		// Check if share matched a previous difficulty from before a vardiff retarget
 		if prevDiff != nil && bigShareDiff.Cmp(prevDiff) >= 0 {
+			prevAssigned, _ := prevDiff.Float64() // credited at the pre-retarget difficulty it satisfied
 			return &types.Share{
 				JobId:      jobId,
 				RemoteAddr: ipAddr,
@@ -333,7 +338,7 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 
 				BlockHeight: job.GetBlockTemplate.Height,
 				BlockReward: job.GetBlockTemplate.CoinbaseValue,
-				Diff:        shareDiff,
+				Diff:        prevAssigned,
 			}
 		} else {
 			return &types.Share{
@@ -353,7 +358,7 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 		Miner:      miner,
 		Rig:        rig,
 
-		Diff: shareDiff,
+		Diff: assignedDiff,
 	}
 }
 
