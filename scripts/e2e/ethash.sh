@@ -52,11 +52,13 @@ GETH_PID=$!
 geth_rpc() { rpc "http://127.0.0.1:$RPCPORT" "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$1\",\"params\":$2}"; }
 blocknum() { geth_rpc eth_blockNumber "[]" | python3 -c "import sys,json;print(int(json.load(sys.stdin).get('result','0x0'),16))" 2>/dev/null || echo 0; }
 
-# eth_getWork returns an error until the miner has assembled a work package.
-for i in $(seq 1 40); do
+# eth_getWork returns an error until the miner has assembled a work package,
+# which on a fresh chain waits for the epoch-0 DAG/cache to build (can take a
+# couple of minutes on a CI runner).
+for i in $(seq 1 180); do
   geth_rpc eth_getWork "[]" | grep -q '"result"' && break; sleep 1
 done
-geth_rpc eth_getWork "[]" | grep -q '"result"' || { fail "$SYM: geth never served eth_getWork"; tail -8 "$DIR/node.log"; exit 1; }
+geth_rpc eth_getWork "[]" | grep -q '"result"' || { fail "$SYM: geth never served eth_getWork"; tail -15 "$DIR/node.log"; exit 1; }
 log "$SYM: node up, serving work, height=$(blocknum)"
 
 # --- pool config (engine mode) ----------------------------------------------
