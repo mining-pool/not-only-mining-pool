@@ -23,7 +23,7 @@
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 NAME=$1 SYM=$2 DAEMON=$3 CLI=$4 ALGO=$5 RPCPORT=$6 SPORT=$7; shift 7
-PEERS=1 GBTRULES="segwit" BLOCKHASHER="" SHA256DBLOCK=1 CBHASH="sha256d" WAITREADY=0 ENGINE=""
+PEERS=1 GBTRULES="segwit" BLOCKHASHER="" SHA256DBLOCK=1 CBHASH="sha256d" WAITREADY=0 ENGINE="" DIFF=0.0001
 for kv in "$@"; do case "$kv" in
   peers=*) PEERS="${kv#*=}";;
   gbtRules=*) GBTRULES="${kv#*=}";;
@@ -32,6 +32,9 @@ for kv in "$@"; do case "$kv" in
   coinbaseHasher=*) CBHASH="${kv#*=}";;
   waitReady=*) WAITREADY="${kv#*=}";;
   engine=*) ENGINE="${kv#*=}";;
+  # starting share difficulty. kawpow is CPU-heavy: a share at diff d costs
+  # ~d*2^32 hashes, so kawpow needs a far lower diff than sha256d to be solvable.
+  diff=*) DIFF="${kv#*=}";;
 esac; done
 
 # The engine's dialect miner (only kawpow rides the GBT node path today).
@@ -98,9 +101,10 @@ for i in $(seq 1 30); do
 done
 log "$SYM: node up, conns=$(cli getconnectioncount 2>/dev/null) height=$(cli getblockcount) addr=$ADDR"
 
-python3 - "$ADDR" "$NAME" "$SYM" "$ALGO" "$SHA256DBLOCK" "$BLOCKHASHER" "$CBHASH" "$GBTRULES" "$RPCPORT" "$SPORT" "$DIR" "$ENGINE" <<'PY'
+python3 - "$ADDR" "$NAME" "$SYM" "$ALGO" "$SHA256DBLOCK" "$BLOCKHASHER" "$CBHASH" "$GBTRULES" "$RPCPORT" "$SPORT" "$DIR" "$ENGINE" "$DIFF" <<'PY'
 import json,sys
-addr,name,sym,algo,s256,bh,cbh,rules,rpc,sport,d,engine=sys.argv[1:13]
+addr,name,sym,algo,s256,bh,cbh,rules,rpc,sport,d,engine,diff=sys.argv[1:14]
+diff=float(diff)
 alg={"name":algo,"multiplier":0,"sha256dBlockHasher":s256=="1"}
 if bh: alg["blockHasher"]=bh
 if cbh and cbh!="sha256d": alg["coinbaseHasher"]=cbh
@@ -110,7 +114,7 @@ c={"coin":coin,"algorithm":alg,"disablePayment":True,
  "poolAddress":{"address":addr,"type":"p2pkh"},"rewardRecipients":[],
  "blockRefreshInterval":500,"jobRebroadcastTimeout":55,"connectionTimeout":600,
  "banning":{"time":600,"invalidPercent":50,"checkThreshold":500,"purgeInterval":300},
- "ports":{sport:{"diff":0.0001,"varDiff":{"minDiff":0.00001,"maxDiff":1000,"targetTime":15,"retargetTime":90,"variancePercent":30},"tls":None}},
+ "ports":{sport:{"diff":diff,"varDiff":{"minDiff":diff/10,"maxDiff":1000,"targetTime":15,"retargetTime":90,"variancePercent":30},"tls":None}},
  "daemons":[{"host":"127.0.0.1","port":int(rpc),"user":"u","password":"p"}],
  "p2p":None,"api":{"host":"0.0.0.0","port":0},
  "storage":{"network":"tcp","host":"127.0.0.1","port":6379,"tls":None}}

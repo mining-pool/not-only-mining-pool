@@ -21,7 +21,7 @@ GBT_COINS=(
   "Groestlcoin  GRS  groestlcoind  groestlcoin-cli groestl   18444 3041  blockHasher=sha256 sha256dBlock=0 coinbaseHasher=sha256"
   "Monacoin     MONA monacoind     monacoin-cli    lyra2rev2 19643 3046  peers=2"
   "Vertcoin     VTC  vertcoind     vertcoin-cli    verthash  19743 3047  peers=2 waitReady=400"
-  "Ravencoin    RVN  ravend        raven-cli       kawpow    19843 3048  peers=2 engine=kawpow waitReady=60"
+  "Ravencoin    RVN  ravend        raven-cli       kawpow    19843 3048  peers=2 engine=kawpow waitReady=60 diff=0.00000001"
 )
 
 # --- engine coins (dedicated runners; non-bitcoind node interaction) --------
