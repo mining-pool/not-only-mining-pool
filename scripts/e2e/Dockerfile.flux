@@ -22,12 +22,14 @@ RUN set -eux; \
     fluxd --version | head -1
 
 # zk-SNARK proving params (sapling + sprout-groth16, ~775MB) into the default
-# ~/.zcash-params zcashd/fluxd search path.
+# ~/.zcash-params zcashd/fluxd search path. The canonical z.cash CDN is more
+# reliable for the 725MB sprout file than the runonflux mirror; force HTTP/1.1 and
+# retry/resume so a dropped stream doesn't fail the whole build.
 RUN set -eux; \
     d=/root/.zcash-params; mkdir -p "$d"; \
-    base="https://download.runonflux.io/downloads"; \
+    base="https://download.z.cash/downloads"; \
     for f in sapling-spend.params sapling-output.params sprout-groth16.params; do \
-      curl -fsSL -o "$d/$f" "$base/$f"; \
+      curl -fSL --http1.1 --retry 8 --retry-delay 5 --retry-all-errors -C - -o "$d/$f" "$base/$f"; \
     done; \
     ln -sf "$d" /root/.flux-params; \
     ls -la "$d"
