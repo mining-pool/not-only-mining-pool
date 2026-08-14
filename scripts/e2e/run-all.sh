@@ -31,6 +31,7 @@ ENGINE_COINS=(
   "XMR  cryptonote.sh  18081 3040"
   "KAS  kaspa.sh       16110 3044"
   "PAY  payment.sh     18455 3050"  # payout processor: mine → mature → sendmany
+  "RVNPAY payment-rvn.sh 19845 3049"  # engine-coin payout: kawpow pool serves the payer
 )
 
 declare -a RESULTS
