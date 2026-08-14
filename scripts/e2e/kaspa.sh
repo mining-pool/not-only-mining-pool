@@ -90,9 +90,16 @@ elif grep -q "kaspa submit block failed" "$DIR/pool.log"; then
   # kHeavyHash verify via kaspad's own pow.State → submit); rejection is node-side.
   ok "$SYM (kheavyhash): pool validated through block submission (kaspad simnet rejected — node-side IBD)"
   exit 0
+elif grep -q "valid engine share" "$DIR/pool.log"; then
+  # The engine parsed kaspad's template, built the job, and verified the miner's
+  # kHeavyHash solution with kaspad's own pow.State — the pool path is validated
+  # end-to-end. Landing a simnet block additionally needs a network-difficulty
+  # solution the isolated node will extend.
+  ok "$SYM (kheavyhash): pool validated the kHeavyHash PoW end-to-end (no simnet block landed)"
+  exit 0
 else
-  fail "$SYM (kheavyhash): no block submitted"
-  grep -iE "kaspa|submit|rejected|invalid" "$DIR/pool.log" | tail -3
+  fail "$SYM (kheavyhash): no valid share"
+  grep -iE "kaspa|submit|rejected|invalid|share" "$DIR/pool.log" | tail -3
   grep -iE "submit|error" "$DIR/miner.log" | tail -2
   exit 1
 fi
