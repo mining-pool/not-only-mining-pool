@@ -70,6 +70,7 @@ func NewEnginePool(options *config.Options) *Pool {
 
 	ss := stratum.NewStratumServer(options, nil, bm)
 	ss.Engine = eng
+	ss.DB = db // engine-mode share persistence (stats/accounting)
 
 	return &Pool{
 		Options:       options,

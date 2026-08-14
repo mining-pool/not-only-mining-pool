@@ -6,12 +6,16 @@ import (
 	"encoding/json"
 	"math/big"
 	"net"
+	"strconv"
 	"testing"
 	"time"
+
+	"github.com/alicebob/miniredis/v2"
 
 	"github.com/mining-pool/not-only-mining-pool/config"
 	"github.com/mining-pool/not-only-mining-pool/daemons"
 	"github.com/mining-pool/not-only-mining-pool/engine"
+	"github.com/mining-pool/not-only-mining-pool/storage"
 	"github.com/mining-pool/not-only-mining-pool/types"
 )
 
@@ -304,6 +308,46 @@ func TestEngineRejectsInvalidShareAndUnauthorized(t *testing.T) {
 	msgs = drainResponses(t, out)
 	if len(msgs) != 1 || msgs[0]["result"] != false || msgs[0]["error"] == nil {
 		t.Fatalf("invalid share should reply false with error: %v", msgs)
+	}
+}
+
+// A valid engine share is persisted for stats/accounting, credited at the
+// assigned difficulty and keyed by the miner's payout address (worker.rig split).
+func TestEngineSharePersisted(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mr.Close()
+	host, portStr, _ := net.SplitHostPort(mr.Addr())
+	port, _ := strconv.Atoi(portStr)
+	db := storage.NewStorage("TESTENG", &config.RedisOptions{Network: "tcp", Host: host, Port: port})
+
+	eng := &fakeEngine{valid: true}
+	sc, _ := newEngineTestClient(eng)
+	sc.DB = db
+	sc.IsAuthorized = true
+	sc.WorkerName = "minerAddr.rig1"
+	sc.CurrentDifficulty = big.NewFloat(8)
+
+	sc.HandleMessage(req("eth_submitWork", "0xn", "0xh", "0xm"))
+
+	// PutShare runs asynchronously; poll briefly for the round contribution.
+	var got string
+	for i := 0; i < 100; i++ {
+		if got = mr.HGet("TESTENG:shares:roundCurrent", "minerAddr"); got != "" {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got != "8" {
+		t.Errorf("round contribution for minerAddr = %q, want 8 (assigned diff)", got)
+	}
+	if ok, _ := mr.SIsMember("TESTENG:miner:minerAddr:rigs", "rig1"); !ok {
+		t.Error("rig1 should be indexed under minerAddr")
+	}
+	if ok, _ := mr.SIsMember("TESTENG:pool:miners", "minerAddr"); !ok {
+		t.Error("minerAddr should be indexed in pool:miners")
 	}
 }
 

@@ -134,8 +134,11 @@
 路由层已用假引擎单测覆盖（`stratum/engine_test.go`）：login 推 work（含端口默认难度）、getWork、
 valid/invalid submit 回包、未授权拒绝。
 
-**遗留 TODO**：引擎模式的 share 尚未写入 redis（不影响出块，仅影响统计/支付），
-见 `stratum/engine.go` 中的 TODO 标注。
+**share 落库**：引擎模式的有效/无效 share 现已写入 redis（`stratum/engine.go`
+submit 处理里的 `go sc.DB.PutShare(...)`），复用 GBT 的 `PutShare`——统计（算力、
+有效/无效计数）、按 `miner.rig` 拆分、轮次贡献与 PPLNS 日志均可用，且按**分配难度**
+计量（非达成难度）。出块/派奖仍取决于各币种钱包模型：引擎 share 不带 bitcoin 式
+`BlockHex`/coinbase txid，故经 bitcoin-family payer 自动派奖需按币种单独接入。
 
 > 后续仍建议做"Step 0 重构"（抽 `gbt.Engine`），让两条通路都走 `engine.Engine`，彻底解耦。
 
