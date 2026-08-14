@@ -29,6 +29,7 @@ type fakeWallet struct {
 
 	SentBatches []map[string]float64 // captured sendmany calls
 	AddrMethod  string               // captured address-check method actually called
+	badAddr     map[string]bool      // addresses the wallet rejects as unpayable
 }
 
 func (w *fakeWallet) handler(rw http.ResponseWriter, r *http.Request) {
@@ -47,7 +48,13 @@ func (w *fakeWallet) handler(rw http.ResponseWriter, r *http.Request) {
 	case "getaddressinfo", "validateaddress":
 		w.mu.Lock()
 		w.AddrMethod = req.Method
+		bad := w.badAddr[req.Params[0].(string)]
 		w.mu.Unlock()
+		if bad {
+			// getaddressinfo rejects a malformed address with an error.
+			rpcErr = &daemons.JsonRpcError{Code: -5, Message: "Invalid address"}
+			break
+		}
 		result = map[string]interface{}{"ismine": true, "isvalid": true, "address": req.Params[0], "labels": []string{""}}
 	case "getbalance":
 		// getbalance returns a bare number; emit it raw.
@@ -429,6 +436,110 @@ func TestPaymentOptionsDefaults(t *testing.T) {
 	}
 	if got.SendManyDummy != "" || got.OmitSendManyDummy {
 		t.Errorf("sendmany dummy default should be present-empty, got %q omit=%v", got.SendManyDummy, got.OmitSendManyDummy)
+	}
+}
+
+// A zero/negative pplnsWindow is documented to fall back to the block's round,
+// not pay every retained share across earlier rounds.
+func TestPayout_PPLNSZeroWindowFallsBackToRound(t *testing.T) {
+	h := newHarness(t, &config.PaymentOptions{MinPayment: 0, MinConfirmations: 100, PayMode: "pplns", PPLNSWindow: 0})
+	if err := h.pm.Init(); err != nil {
+		t.Fatal(err)
+	}
+	// round 500 contains only minerA; the pplns log additionally holds minerB from
+	// an earlier round. With window 0 we must pay the round (A only), not the log.
+	h.seedRoundShares(500, map[string]float64{"minerA": 100})
+	h.seedPPLNS("minerA", 10, 1)
+	h.seedPPLNS("minerB", 10, 2)
+	h.seedPending(500, "tx500", "minerA", 2) // mark past both log entries
+	h.wallet.gettx = generateTx(120, 50.0)
+	h.wallet.sendmany = func(_ bool, amounts map[string]float64) (string, *daemons.JsonRpcError) {
+		if amounts["minerA"] != 50.0 {
+			t.Errorf("minerA payout = %v, want the full 50 from its round", amounts["minerA"])
+		}
+		if _, ok := amounts["minerB"]; ok {
+			t.Errorf("minerB is from an earlier round and must not be paid: %v", amounts)
+		}
+		return "txid", nil
+	}
+	if err := h.pm.processPayments(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// One unpayable worker name must not fail the whole batch: it is skipped and its
+// balance carries over while everyone else is still paid.
+func TestPayout_InvalidAddressSkipped(t *testing.T) {
+	h := newHarness(t, &config.PaymentOptions{MinPayment: 0, MinConfirmations: 100})
+	h.wallet.badAddr = map[string]bool{"minerBad": true}
+	if err := h.pm.Init(); err != nil {
+		t.Fatal(err)
+	}
+	h.seedRound(600, "tx600", map[string]float64{"minerGood": 30, "minerBad": 70})
+	h.wallet.gettx = generateTx(120, 100.0) // good->30, bad->70
+	h.wallet.sendmany = func(_ bool, amounts map[string]float64) (string, *daemons.JsonRpcError) {
+		if amounts["minerGood"] != 30.0 {
+			t.Errorf("minerGood payout = %v, want 30", amounts["minerGood"])
+		}
+		if _, ok := amounts["minerBad"]; ok {
+			t.Errorf("unpayable minerBad must be excluded from sendmany: %v", amounts)
+		}
+		return "txid", nil
+	}
+	if err := h.pm.processPayments(); err != nil {
+		t.Fatal(err)
+	}
+	if v := h.mr.HGet("TEST:balances", "minerBad"); v != "70" {
+		t.Errorf("unpayable balance should carry over, got %q want 70", v)
+	}
+	if ok, _ := h.mr.SIsMember("TEST:blocks:confirmed", (&storage.PendingBlock{Hash: "blk600", TxHash: "tx600", Height: 600}).String()); !ok {
+		t.Error("block should still confirm when a payable miner was paid")
+	}
+}
+
+// Wallet RPCs must reach the configured payment.daemon index, not always daemon 0.
+func TestPayout_UsesConfiguredDaemonIndex(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(mr.Close)
+	host, portStr := splitHostPort(mr.Addr())
+	port, _ := strconv.Atoi(portStr)
+	db := storage.NewStorage("TEST", &config.RedisOptions{Network: "tcp", Host: host, Port: port})
+
+	// daemon 0 is a mining node that has no wallet; every wallet RPC errors there.
+	mining := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		var req struct{ Id interface{} }
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &req)
+		writeRPC(rw, req.Id, nil, &daemons.JsonRpcError{Code: -32601, Message: "no wallet on mining node"})
+	}))
+	t.Cleanup(mining.Close)
+	w := &fakeWallet{balance: "12.34567890"}
+	wallet := httptest.NewServer(http.HandlerFunc(w.handler))
+	t.Cleanup(wallet.Close)
+
+	toDaemon := func(s *httptest.Server) *config.DaemonOptions {
+		u, _ := url.Parse(s.URL)
+		p, _ := strconv.Atoi(u.Port())
+		return &config.DaemonOptions{Host: u.Hostname(), Port: p}
+	}
+	dm := daemons.NewDaemonManager([]*config.DaemonOptions{toDaemon(mining), toDaemon(wallet)}, &config.CoinOptions{Name: "TEST"})
+	pm := NewPaymentManager(&config.PaymentOptions{MinPayment: 0, MinConfirmations: 100, Daemon: 1}, &config.Recipient{Address: poolAddr, Type: "p2pkh"}, dm, db)
+	h := &harness{pm: pm, db: db, wallet: w, mr: mr}
+
+	if err := h.pm.Init(); err != nil {
+		t.Fatalf("Init must reach the wallet at daemon index 1: %v", err)
+	}
+	h.seedRound(700, "tx700", map[string]float64{"minerA": 100})
+	h.wallet.gettx = generateTx(120, 50.0)
+	h.wallet.sendmany = func(_ bool, _ map[string]float64) (string, *daemons.JsonRpcError) { return "txid", nil }
+	if err := h.pm.processPayments(); err != nil {
+		t.Fatal(err)
+	}
+	if len(h.wallet.SentBatches) != 1 {
+		t.Fatalf("payout should route to the wallet daemon, got %d sendmany calls", len(h.wallet.SentBatches))
 	}
 }
 

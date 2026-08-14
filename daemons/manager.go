@@ -206,6 +206,26 @@ func (dm *DaemonManager) CheckStatusCode(statusCode int) error {
 // Cmd will call daemons one by one and return the first answer
 // one by one not all is to try fetching from the same one not random one
 func (dm *DaemonManager) Cmd(method string, params []interface{}) (*config.DaemonOptions, *JsonRpcResponse, *http.Response) {
+	for i := range dm.Daemons {
+		return dm.cmdToIndex(i, method, params)
+	}
+
+	log.Error("failed getting GBT from all daemons!")
+	return nil, nil, nil
+}
+
+// CmdToDaemon runs method against a specific daemon by index. The payer uses it
+// so wallet RPCs (getaddressinfo/getbalance/gettransaction/sendmany) reach the
+// configured payment.daemon rather than always the first daemon.
+func (dm *DaemonManager) CmdToDaemon(index int, method string, params []interface{}) (*config.DaemonOptions, *JsonRpcResponse, *http.Response) {
+	if index < 0 || index >= len(dm.Daemons) {
+		log.Errorf("daemon index %d out of range (have %d daemons)", index, len(dm.Daemons))
+		return nil, nil, nil
+	}
+	return dm.cmdToIndex(index, method, params)
+}
+
+func (dm *DaemonManager) cmdToIndex(i int, method string, params []interface{}) (*config.DaemonOptions, *JsonRpcResponse, *http.Response) {
 	reqRawData, err := json.Marshal(map[string]interface{}{
 		"id":     utils.RandPositiveInt64(),
 		"method": method,
@@ -216,32 +236,21 @@ func (dm *DaemonManager) Cmd(method string, params []interface{}) (*config.Daemo
 	}
 
 	var result JsonRpcResponse
-	var res *http.Response
-	for i := range dm.Daemons {
-		var err error
-		res, err = dm.DoHttpRequest(dm.Daemons[i], reqRawData)
-		if err != nil {
-			log.Error(err)
-		}
-
-		//if err := dm.CheckStatusCode(res.StatusCode); err != nil {
-		//	log.Println(err)
-		//}
-
-		raw, err := ioutil.ReadAll(res.Body)
-		if err != nil {
-			log.Error(err)
-		}
-		res.Body = ioutil.NopCloser(bytes.NewBuffer(raw))
-
-		err = json.Unmarshal(raw, &result)
-		if err != nil {
-			log.Error(err)
-		}
-
-		return dm.Daemons[i], &result, res
+	res, err := dm.DoHttpRequest(dm.Daemons[i], reqRawData)
+	if err != nil {
+		log.Error(err)
 	}
 
-	log.Error("failed getting GBT from all daemons!")
-	return nil, nil, nil
+	raw, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		log.Error(err)
+	}
+	res.Body = ioutil.NopCloser(bytes.NewBuffer(raw))
+
+	err = json.Unmarshal(raw, &result)
+	if err != nil {
+		log.Error(err)
+	}
+
+	return dm.Daemons[i], &result, res
 }

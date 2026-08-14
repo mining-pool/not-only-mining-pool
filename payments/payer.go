@@ -26,6 +26,8 @@ type PaymentManager struct {
 	PoolAddress *config.Recipient
 	Magnitude   float64 // base units (satoshis) per coin
 	MinPayment  uint64  // satoshis
+
+	validAddr map[string]bool // cache of address-ownership/validity checks
 }
 
 func NewPaymentManager(options *config.PaymentOptions, poolAddr *config.Recipient, dm *daemons.DaemonManager, db *storage.DB) *PaymentManager {
@@ -33,12 +35,20 @@ func NewPaymentManager(options *config.PaymentOptions, poolAddr *config.Recipien
 		dm:          dm,
 		db:          db,
 		PoolAddress: poolAddr,
+		validAddr:   map[string]bool{},
 	}
 	// options is nil when payments are disabled; Init/Serve are then never called.
 	if options != nil {
 		pm.options = options.WithDefaults()
 	}
 	return pm
+}
+
+// cmd routes a wallet RPC to the configured payment daemon (payment.daemon),
+// which may differ from the mining daemon used for getblocktemplate/submitblock.
+func (pm *PaymentManager) cmd(method string, params []interface{}) (*config.DaemonOptions, *daemons.JsonRpcResponse) {
+	instance, result, _ := pm.dm.CmdToDaemon(pm.options.Daemon, method, params)
+	return instance, result
 }
 
 // Init validates the pay mode, the pool address ownership, and the coin
@@ -70,6 +80,16 @@ func (pm *PaymentManager) attribute(pb *storage.PendingBlock, rewardSat uint64) 
 		}
 		return map[string]uint64{pb.Finder: rewardSat}, nil
 	case config.PayModePPLNS:
+		if pm.options.PPLNSWindow <= 0 {
+			// documented fallback: a non-positive window pays the block's own round
+			// (GetPPLNSShares would otherwise treat <=0 as an unbounded window and
+			// pay miners from earlier rounds too).
+			shares, err := pm.db.GetRoundContrib(pb.Height)
+			if err != nil {
+				return nil, err
+			}
+			return splitByShares(rewardSat, shares), nil
+		}
 		shares, err := pm.db.GetPPLNSShares(pb.Mark, pm.options.PPLNSWindow)
 		if err != nil {
 			return nil, err
@@ -113,7 +133,7 @@ func (pm *PaymentManager) Serve() {
 // validatePoolAddress confirms the payment wallet owns the pool payout address,
 // so its coinbase rewards land somewhere the pool can spend from.
 func (pm *PaymentManager) validatePoolAddress() error {
-	instance, result, _ := pm.dm.Cmd(pm.options.AddressCheckMethod, []interface{}{pm.PoolAddress.Address})
+	instance, result := pm.cmd(pm.options.AddressCheckMethod, []interface{}{pm.PoolAddress.Address})
 	if result == nil {
 		return fmt.Errorf("no response from payment daemon on %s", pm.options.AddressCheckMethod)
 	}
@@ -131,13 +151,36 @@ func (pm *PaymentManager) validatePoolAddress() error {
 	return nil
 }
 
+// validRecipient reports whether addr is a payable address, caching the result
+// since addresses rarely change. An unpayable worker name is skipped (its
+// balance carries over) so it cannot fail the whole sendmany batch.
+func (pm *PaymentManager) validRecipient(addr string) bool {
+	if v, ok := pm.validAddr[addr]; ok {
+		return v
+	}
+	_, result := pm.cmd(pm.options.AddressCheckMethod, []interface{}{addr})
+	// getaddressinfo rejects a malformed address with an error; validateaddress
+	// instead returns isvalid=false without an error, so check both.
+	ok := result != nil && result.Error == nil
+	if ok && pm.options.AddressCheckMethod == "validateaddress" {
+		if va, err := daemons.BytesToValidateAddress(result.Result); err != nil || !va.Isvalid {
+			ok = false
+		}
+	}
+	if !ok {
+		log.Warnf("skipping payouts to unpayable address %q; balance will carry over", addr)
+	}
+	pm.validAddr[addr] = ok
+	return ok
+}
+
 // setMagnitude fixes the base-units-per-coin factor. It honours an explicit
 // config value and otherwise derives it from the wallet's getbalance precision.
 func (pm *PaymentManager) setMagnitude() error {
 	if pm.options.Magnitude > 0 {
 		pm.Magnitude = pm.options.Magnitude
 	} else {
-		instance, result, _ := pm.dm.Cmd("getbalance", []interface{}{})
+		instance, result := pm.cmd("getbalance", []interface{}{})
 		if result == nil {
 			return fmt.Errorf("no response from payment daemon on getbalance")
 		}
@@ -324,7 +367,7 @@ func (pm *PaymentManager) processPPS() error {
 // reward credited to the pool address, its category and its confirmations. ok is
 // false only on a transient RPC failure (retry next run).
 func (pm *PaymentManager) classifyBlock(pb *storage.PendingBlock) (reward float64, category string, confirmations int64, ok bool) {
-	_, result, _ := pm.dm.Cmd("gettransaction", []interface{}{pb.TxHash})
+	_, result := pm.cmd("gettransaction", []interface{}{pb.TxHash})
 	if result == nil {
 		return 0, "", 0, false
 	}
@@ -363,7 +406,10 @@ func (pm *PaymentManager) settle(workers map[string]*worker, update *storage.Pay
 	for _, w := range workers {
 		owed := w.Balance + w.Reward
 		toSend := uint64(math.Floor(float64(owed) * (1 - withhold)))
-		if toSend >= pm.MinPayment && toSend > 0 {
+		// Worker names are unauthenticated (AuthorizeFn accepts any name), so a
+		// single malformed one must not fail the whole sendmany batch: skip it and
+		// carry its balance forward instead of poisoning everyone's payout.
+		if toSend >= pm.MinPayment && toSend > 0 && pm.validRecipient(w.Address) {
 			amounts[w.Address] = pm.SatToCoin(toSend)
 			w.Sent = toSend
 		} else {
@@ -378,7 +424,7 @@ func (pm *PaymentManager) settle(workers map[string]*worker, update *storage.Pay
 		}
 		args = append(args, amounts)
 
-		_, result, _ := pm.dm.Cmd("sendmany", args)
+		_, result := pm.cmd("sendmany", args)
 		if result == nil {
 			return fmt.Errorf("no response from payment daemon on sendmany")
 		}

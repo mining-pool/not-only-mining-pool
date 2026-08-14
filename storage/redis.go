@@ -238,7 +238,9 @@ type PaymentUpdate struct {
 // pending set, and drops the sealed rounds that were paid.
 func (s *DB) ApplyPayments(u *PaymentUpdate) error {
 	ctx := context.Background()
-	ppl := s.Pipeline()
+	// TxPipeline wraps the writes in MULTI/EXEC so a payout run's balance, payout,
+	// block-state, round-deletion and cursor updates apply all-or-nothing.
+	ppl := s.TxPipeline()
 	for miner, bal := range u.Balances {
 		ppl.HSet(ctx, s.coin+":balances", miner, strconv.FormatFloat(bal, 'f', -1, 64))
 	}
