@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"math/big"
 	"net"
 	"testing"
 	"time"
@@ -30,8 +31,9 @@ func (f *fakeConn) SetWriteDeadline(t time.Time) error { return nil }
 
 // fakeEngine implements engine.Engine plus the per-difficulty job capability.
 type fakeEngine struct {
-	submits [][]interface{}
-	valid   bool
+	submits   [][]interface{}
+	valid     bool
+	shareDiff float64 // if >0, the achieved difficulty OnSubmit reports
 }
 
 func (f *fakeEngine) Name() string                     { return "fake" }
@@ -48,7 +50,11 @@ func (f *fakeEngine) JobParamsForDifficulty(diff float64) []interface{} {
 }
 func (f *fakeEngine) OnSubmit(s engine.Session, params []interface{}) *types.Share {
 	f.submits = append(f.submits, params)
-	share := &types.Share{Miner: s.WorkerName(), RemoteAddr: s.RemoteAddr(), Diff: s.Difficulty()}
+	diff := s.Difficulty()
+	if f.shareDiff > 0 {
+		diff = f.shareDiff
+	}
+	share := &types.Share{Miner: s.WorkerName(), RemoteAddr: s.RemoteAddr(), Diff: diff}
 	if !f.valid {
 		share.ErrorCode = types.ErrLowDiffShare
 	}
@@ -298,5 +304,30 @@ func TestEngineRejectsInvalidShareAndUnauthorized(t *testing.T) {
 	msgs = drainResponses(t, out)
 	if len(msgs) != 1 || msgs[0]["result"] != false || msgs[0]["error"] == nil {
 		t.Fatalf("invalid share should reply false with error: %v", msgs)
+	}
+}
+
+// After a vardiff retarget raises the difficulty, a share that still meets the
+// previous difficulty is honoured; one below both is rejected.
+func TestEngineVarDiffBoundaryTolerance(t *testing.T) {
+	eng := &fakeEngine{valid: false, shareDiff: 8} // engine would flag ErrLowDiffShare
+	sc, out := newEngineTestClient(eng)
+	sc.IsAuthorized = true
+	sc.PreviousDifficulty = big.NewFloat(8) // difficulty before the retarget
+	sc.CurrentDifficulty = big.NewFloat(16) // retarget raised it
+
+	// achieved 8 meets the previous difficulty -> accepted despite ErrLowDiffShare
+	sc.HandleMessage(req("eth_submitWork", "0xn", "0xh", "0xm"))
+	msgs := drainResponses(t, out)
+	if len(msgs) != 1 || msgs[0]["result"] != true || msgs[0]["error"] != nil {
+		t.Fatalf("share meeting the previous difficulty should be accepted: %v", msgs)
+	}
+
+	// achieved 4 is below both current and previous -> still rejected
+	eng.shareDiff = 4
+	sc.HandleMessage(req("eth_submitWork", "0xn", "0xh", "0xm"))
+	msgs = drainResponses(t, out)
+	if len(msgs) != 1 || msgs[0]["result"] != false || msgs[0]["error"] == nil {
+		t.Fatalf("share below both difficulties should be rejected: %v", msgs)
 	}
 }

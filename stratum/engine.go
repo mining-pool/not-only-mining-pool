@@ -7,6 +7,7 @@ import (
 
 	"github.com/mining-pool/not-only-mining-pool/daemons"
 	"github.com/mining-pool/not-only-mining-pool/engine"
+	"github.com/mining-pool/not-only-mining-pool/types"
 	"github.com/mining-pool/not-only-mining-pool/utils"
 )
 
@@ -210,6 +211,13 @@ func (sc *Client) handleEngineMessage(message *daemons.JsonRpcRequest) {
 		}
 
 		share := sc.Engine.OnSubmit(sess, rawParamsToIface(message.Params))
+		// vardiff boundary tolerance: honour a share that met the difficulty in
+		// force before the last retarget — the miner may still be on work targeted
+		// at the previous difficulty (engines that never emit ErrLowDiffShare, e.g.
+		// node-authoritative beam, are unaffected).
+		if share.ErrorCode == types.ErrLowDiffShare && sc.meetsPreviousEngineDiff(share.Diff) {
+			share.ErrorCode = 0
+		}
 		valid := share.ErrorCode == 0
 
 		// TODO(engine): persist share to storage for stats/payments (the engine
@@ -246,7 +254,9 @@ func (sc *Client) handleEngineMessage(message *daemons.JsonRpcRequest) {
 }
 
 // applyEngineVarDiff retargets the client difficulty and re-pushes work when the
-// new target differs (ethash carries the target inside the work package).
+// new target differs (engines carry the target inside the work package). It
+// records the outgoing difficulty as PreviousDifficulty so a share the miner
+// already found against the old target is still honoured (see meetsPreviousEngineDiff).
 func (sc *Client) applyEngineVarDiff() {
 	if sc.VarDiff == nil || sc.CurrentDifficulty == nil {
 		return
@@ -254,10 +264,23 @@ func (sc *Client) applyEngineVarDiff() {
 	cur, _ := sc.CurrentDifficulty.Float64()
 	next := sc.VarDiff.CalcNextDiff(cur)
 	if next != 0 && next != cur {
+		sc.PreviousDifficulty = sc.CurrentDifficulty
 		sc.CurrentDifficulty = big.NewFloat(next)
-		log.Info("ethash vardiff retarget ", sc.WorkerName, " -> ", next)
+		log.Info("engine vardiff retarget ", sc.WorkerName, " ", cur, " -> ", next)
 		sc.sendEngineWork()
 	}
+}
+
+// meetsPreviousEngineDiff reports whether an achieved share difficulty satisfies
+// the difficulty in force before the most recent vardiff retarget. It lets a
+// share found against the previous (lower) target through after a retarget
+// raised the difficulty, mirroring the GBT path's prevDiff tolerance.
+func (sc *Client) meetsPreviousEngineDiff(achieved float64) bool {
+	if sc.PreviousDifficulty == nil {
+		return false
+	}
+	prev, _ := sc.PreviousDifficulty.Float64()
+	return prev > 0 && achieved >= prev
 }
 
 // rawParamsToIface decodes request params for engine dispatch: array params
