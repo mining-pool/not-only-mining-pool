@@ -53,3 +53,10 @@ rpc() { curl -s -m 8 "$1" -H 'Content-Type: application/json' -d "$2"; }
 # wallet gRPC call) so a stuck daemon fails fast instead of hanging the suite.
 # Falls back to running without a limit where `timeout` is absent (bare macOS).
 with_timeout() { local s="$1"; shift; if have timeout; then timeout "$s" "$@"; else "$@"; fi; }
+
+# wait_pool_started <poollog> — return 0 once the pool logs it is up (waits ≤30s).
+# Callers report their own failure diagnostics (each tails a different amount).
+wait_pool_started() {
+  for i in $(seq 1 30); do grep -q "Stratum Pool Server Started" "$1" 2>/dev/null && return 0; sleep 1; done
+  return 1
+}

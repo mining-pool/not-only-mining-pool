@@ -73,8 +73,7 @@ build_tool e2ekasminer "$DIR/miner" kaspa || { fail "$SYM: miner build failed"; 
 
 free_port "$SPORT"
 ( cd "$DIR" && KASPA_ALLOW_UNSYNCED=1 "$DIR/pool" -c config.json -l info >pool.log 2>&1 & )
-for i in $(seq 1 30); do grep -q "Stratum Pool Server Started" "$DIR/pool.log" 2>/dev/null && break; sleep 1; done
-grep -q "Stratum Pool Server Started" "$DIR/pool.log" || { fail "$SYM: pool did not start"; tail -6 "$DIR/pool.log"; exit 1; }
+wait_pool_started "$DIR/pool.log" || { fail "$SYM: pool did not start"; tail -6 "$DIR/pool.log"; exit 1; }
 log "$SYM: pool up"
 
 # kaspad has no bitcoin-style getblockcount over bash; assert on the engine's

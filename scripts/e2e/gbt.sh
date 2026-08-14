@@ -137,8 +137,7 @@ fi
 # exists for bare-host runs too.
 mkdir -p "$HOME/.powcache"
 ( cd "$DIR" && "$DIR/pool" -c config.json -l info >pool.log 2>&1 & )
-for i in $(seq 1 30); do grep -q "Stratum Pool Server Started" "$DIR/pool.log" 2>/dev/null && break; sleep 1; done
-grep -q "Stratum Pool Server Started" "$DIR/pool.log" || { fail "$SYM: pool did not start"; tail -30 "$DIR/pool.log"; exit 1; }
+wait_pool_started "$DIR/pool.log" || { fail "$SYM: pool did not start"; tail -30 "$DIR/pool.log"; exit 1; }
 log "$SYM: pool up"
 
 H0=$(cli getblockcount)
