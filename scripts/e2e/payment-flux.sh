@@ -81,8 +81,6 @@ TXID=$(cli getblock "$BLOCKHASH" | python3 -c "import sys,json;print(json.load(s
 [ -z "$TXID" ] && { fail "$SYM: could not resolve coinbase txid"; exit 1; }
 log "$SYM: node up height=$H pool=$POOL_ADDR miner=$MINER_ADDR block=$H tx=$TXID balance=$(w getbalance 2>/dev/null)"
 
-echo "$SYM DIAG: now=$(date +%s) tiptime=$(tip_time)" >&2
-
 log "$SYM: building equihash pool (default build)"
 build_pool "$DIR/pool" || { fail "$SYM: pool build failed"; exit 1; }
 
