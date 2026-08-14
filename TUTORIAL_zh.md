@@ -1,5 +1,7 @@
 # 主流矿币适配教程（Top-20）
 
+> English: [TUTORIAL.md](TUTORIAL.md)
+
 本教程说明如何用本矿池（NOMP / go-stratum-pool）接入主流 PoW 矿币，并解释**哪些能接、哪些不能接、以及为什么**。
 
 ---

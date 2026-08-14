@@ -1,5 +1,7 @@
 # 可插拔挖矿引擎（支持 C 类币的架构方案）
 
+> English: [PLUGGABLE_ENGINES.md](PLUGGABLE_ENGINES.md)
+
 本文回答：**C 类币（ETC/XMR/ZEC/RVN/KAS/ERG…）能否通过"可插拔解析器"接入，复用 node 交互以外的所有组件？**
 
 ## 1. 先纠正一个前提

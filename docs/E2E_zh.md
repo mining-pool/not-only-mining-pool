@@ -1,5 +1,7 @@
 # 端到端测试报告
 
+> English: [E2E.md](E2E.md)
+
 用真实币种节点 + 真实矿机（`tools/e2eminer`、`tools/e2exmrminer`、`tools/e2ekasminer`、`tools/e2eethminer`）
 对整条链路做了实机验证：`节点 getblocktemplate/getWork → 矿池组装 → stratum → 矿机求解 → submit → 矿池校验 → 出块`。
 
