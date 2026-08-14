@@ -54,8 +54,10 @@ RUN set -eux; \
     bitcoind --version | head -1
 
 WORKDIR /src
-# cache go deps
+# cache go deps. go.mod has a `replace => ./third_party/go-randomx`, so that
+# local module's go.mod must be present before `go mod download` can resolve it.
 COPY go.mod go.sum ./
+COPY third_party ./third_party
 RUN go mod download
 COPY . .
 # Build the RandomX static lib for THIS container's arch (the committed lib is
