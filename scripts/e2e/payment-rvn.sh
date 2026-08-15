@@ -46,6 +46,10 @@ mkconf "$DIR2" $P2 $((P1+1))
 for i in $(seq 1 60); do cli getblockcount >/dev/null 2>&1 && break; sleep 1; done
 cli getblockcount >/dev/null 2>&1 || { fail "$SYM: node did not come up"; tail -20 "$DIR"/regtest/debug.log 2>/dev/null; exit 1; }
 sleep 3
+echo "$SYM DIAG: ravend kawpow/activation options ->" >&2
+"$DAEMON" --help 2>&1 | grep -iE "kawpow|activation|nuparam|x16" | head -12 >&2 || true
+echo "$SYM DIAG: getblockchaininfo bip9/activation ->" >&2
+cli getblockchaininfo 2>/dev/null | python3 -c 'import sys,json;d=json.load(sys.stdin);print("time",d.get("mediantime"),"bip9",list((d.get("bip9_softforks") or {}).keys()))' >&2 2>/dev/null || true
 
 cli createwallet pool >/dev/null 2>&1 || cli loadwallet pool >/dev/null 2>&1 || true
 POOL_ADDR=$(w getnewaddress "" legacy 2>/dev/null || w getnewaddress)
@@ -102,7 +106,7 @@ wait_pool_started "$DIR/pool.log" || { fail "$SYM: pool did not start"; tail -30
 # one-shot per run, so loop; the pool records the pending block itself on accept.
 H0=$(cli getblockcount)
 LANDED=0
-for attempt in $(seq 1 40); do
+for attempt in $(seq 1 5); do
   with_timeout 30 "$DIR/miner" -pool 127.0.0.1:$SPORT -worker "$MINER_ADDR" >>"$DIR/miner.log" 2>&1
   sleep 1
   if [ "$(cli getblockcount)" -gt "$H0" ]; then LANDED=1; break; fi
