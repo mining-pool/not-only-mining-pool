@@ -40,9 +40,9 @@ rpcflags() { echo "-rpcport=$1 -port=$2 -rpcuser=u -rpcpassword=p -rpcallowip=12
 
 log "$SYM: starting ravend regtest (2 nodes for GBT)"
 mkconf "$DIR" $RPCPORT $P1
-"$DAEMON" -datadir="$DIR" -conf="$DIR/node.conf" $(rpcflags $RPCPORT $P1) -listen -daemon >"$DIR/node.log" 2>&1
+"$DAEMON" -datadir="$DIR" -conf="$DIR/node.conf" $(rpcflags $RPCPORT $P1) -kawpowactivationtime=1 -listen -daemon >"$DIR/node.log" 2>&1
 mkconf "$DIR2" $P2 $((P1+1))
-"$DAEMON" -datadir="$DIR2" -conf="$DIR2/node.conf" $(rpcflags $P2 $((P1+1))) -connect=127.0.0.1:$P1 -daemon >"$DIR2/node.log" 2>&1
+"$DAEMON" -datadir="$DIR2" -conf="$DIR2/node.conf" $(rpcflags $P2 $((P1+1))) -connect=127.0.0.1:$P1 -kawpowactivationtime=1 -daemon >"$DIR2/node.log" 2>&1
 for i in $(seq 1 60); do cli getblockcount >/dev/null 2>&1 && break; sleep 1; done
 cli getblockcount >/dev/null 2>&1 || { fail "$SYM: node did not come up"; tail -20 "$DIR"/regtest/debug.log 2>/dev/null; exit 1; }
 sleep 3
@@ -113,7 +113,7 @@ for attempt in $(seq 1 5); do
 done
 
 if [ "$LANDED" != 1 ]; then
-  fail "$SYM: pool never landed an accepted block after 40 attempts"
+  fail "$SYM: pool never landed an accepted block"
   echo "--- pool.log (block/reject) ---" >&2
   grep -iE "block candidate|rejected the block|found block|high-hash|bad-|time-too|stale|duplicate|error with daemon|failed submitting" "$DIR/pool.log" | tail -10 >&2
   echo "--- ravend debug.log (block validity) ---" >&2
