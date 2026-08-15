@@ -104,8 +104,12 @@ done
 if [ "$LANDED" != 1 ]; then
   fail "$SYM: pool never landed an accepted block after 40 attempts"
   echo "--- pool.log (block/reject) ---" >&2
-  grep -iE "block candidate|rejected the block|found block|high-hash|bad-|time-too|stale|duplicate" "$DIR/pool.log" | tail -20 >&2
-  echo "--- miner.log tail ---" >&2; tail -8 "$DIR/miner.log" >&2
+  grep -iE "block candidate|rejected the block|found block|high-hash|bad-|time-too|stale|duplicate|error with daemon|failed submitting" "$DIR/pool.log" | tail -10 >&2
+  echo "--- ravend debug.log (block validity) ---" >&2
+  grep -iE "ERROR|reject|CheckBlock|ConnectBlock|proof of work|high-hash|bad-|merkle|AcceptBlock|InvalidChain|Misbehaving" "$DIR"/regtest/debug.log 2>/dev/null | tail -20 >&2
+  echo "--- one manual submitblock (unsuppressed) ---" >&2
+  cand=$(grep -oiE "block candidate at height [0-9]+ hash [0-9a-f]+" "$DIR/pool.log" | tail -1)
+  echo "last candidate: $cand" >&2
   exit 1
 fi
 log "$SYM: pool mined + node accepted a block (height $H0 -> $(cli getblockcount))"
