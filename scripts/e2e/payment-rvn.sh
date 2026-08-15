@@ -60,6 +60,13 @@ tip_time() { cli getblock "$(cli getbestblockhash)" 2>/dev/null | python3 -c "im
 for i in $(seq 1 150); do [ "$(date +%s)" -gt "$(( $(tip_time) + 1 ))" ] && break; sleep 1; done
 log "$SYM: node up height=$(cli getblockcount) pool=$POOL_ADDR miner=$MINER_ADDR"
 
+# Diagnostic: the node's own tip header size reveals whether KAWPOW is active
+# (80-byte legacy header vs 120-byte kawpow header with nHeight+nNonce64+mixhash).
+HH=$(cli getblockheader "$(cli getbestblockhash)" false 2>/dev/null)
+echo "$SYM DIAG: tip header = $(( ${#HH} / 2 )) bytes; blockversion=$(cli getblock "$(cli getbestblockhash)" 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin).get("version"))' 2>/dev/null)" >&2
+NODEBLK=$(cli getblock "$(cli getbestblockhash)" 0 2>/dev/null)
+echo "$SYM DIAG: node block hex head = ${NODEBLK:0:260}" >&2
+
 log "$SYM: building kawpow pool + e2ervnminer (-tags kawpow)"
 build_pool "$DIR/pool" kawpow || { fail "$SYM: pool build failed"; exit 1; }
 build_tool e2ervnminer "$DIR/miner" kawpow || { fail "$SYM: miner build failed"; exit 1; }
