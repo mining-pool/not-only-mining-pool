@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 	"strings"
 	"time"
@@ -259,8 +260,57 @@ func (s *DB) ApplyPayments(u *PaymentUpdate) error {
 	if u.PPSCursor > 0 {
 		ppl.Set(ctx, s.coin+":pps:cursor", u.PPSCursor, 0)
 	}
+	// This run's intent is now realized — drop it in the same atomic commit so a
+	// resumed run can't re-apply it.
+	ppl.Del(ctx, s.coin+":payouts:intent")
 	_, err := ppl.Exec(ctx)
 	return err
+}
+
+// --- durable payout intent (double-spend guard) ---
+//
+// sendmany broadcasts on-chain, then ApplyPayments records it in redis. If the
+// process dies between the two, a naive re-run would re-attribute the same blocks
+// and pay again. To prevent that, settle writes the intended PaymentUpdate here
+// BEFORE broadcasting and stamps the txid immediately AFTER; on the next run
+// reconcile() finishes (if a txid is present) or halts for review (if not).
+
+// PutPayoutIntent records the update a payout run is about to broadcast (txid
+// empty until the send returns).
+func (s *DB) PutPayoutIntent(u *PaymentUpdate) error {
+	b, err := json.Marshal(u)
+	if err != nil {
+		return err
+	}
+	return s.HSet(context.Background(), s.coin+":payouts:intent", "update", b, "txid", "").Err()
+}
+
+// SetPayoutIntentTxid stamps the broadcast transaction id onto the current intent
+// as soon as sendmany returns, narrowing the ambiguous window to the RPC itself.
+func (s *DB) SetPayoutIntentTxid(txid string) error {
+	return s.HSet(context.Background(), s.coin+":payouts:intent", "txid", txid).Err()
+}
+
+// GetPayoutIntent returns the in-flight payout intent, if any.
+func (s *DB) GetPayoutIntent() (update *PaymentUpdate, txid string, exists bool, err error) {
+	m, err := s.HGetAll(context.Background(), s.coin+":payouts:intent").Result()
+	if err != nil {
+		return nil, "", false, err
+	}
+	if len(m) == 0 {
+		return nil, "", false, nil
+	}
+	var u PaymentUpdate
+	if err := json.Unmarshal([]byte(m["update"]), &u); err != nil {
+		return nil, "", false, err
+	}
+	return &u, m["txid"], true, nil
+}
+
+// DelPayoutIntent clears the intent (used when a send is known not to have
+// broadcast — e.g. the node rejected it).
+func (s *DB) DelPayoutIntent() error {
+	return s.Del(context.Background(), s.coin+":payouts:intent").Err()
 }
 
 func (s *DB) GetAllMinerBalances() (map[string]float64, error) {

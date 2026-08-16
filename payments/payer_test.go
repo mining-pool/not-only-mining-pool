@@ -229,6 +229,88 @@ func TestPayout_FullFlow(t *testing.T) {
 	}
 }
 
+// --- double-spend guard (durable payout intent) ---
+
+// A successful run leaves no lingering intent.
+func TestPayout_IntentClearedOnSuccess(t *testing.T) {
+	h := newHarness(t, &config.PaymentOptions{MinPayment: 0, MinConfirmations: 100})
+	if err := h.pm.Init(); err != nil {
+		t.Fatal(err)
+	}
+	h.seedRound(100, "tx100", map[string]float64{"minerA": 100})
+	h.wallet.gettx = generateTx(120, 50.0)
+	h.wallet.sendmany = func(bool, map[string]float64) (string, *daemons.JsonRpcError) { return "txid", nil }
+	if err := h.pm.processPayments(); err != nil {
+		t.Fatal(err)
+	}
+	if h.mr.Exists("TEST:payouts:intent") {
+		t.Error("payout intent should be cleared after a successful run")
+	}
+}
+
+// If a run broadcast sendmany (intent has a txid) but died before ApplyPayments,
+// the next run FINISHES it — it must not sendmany again, and the block/payout
+// land exactly once.
+func TestPayout_ResumesSentIntentWithoutRepaying(t *testing.T) {
+	h := newHarness(t, &config.PaymentOptions{MinPayment: 0, MinConfirmations: 100})
+	if err := h.pm.Init(); err != nil {
+		t.Fatal(err)
+	}
+	// A block is still pending, but the interrupted run already paid minerA (txid
+	// stamped) — its intent confirms the block and records the payout.
+	h.seedPending(100, "tx100", "", 0)
+	pb := (&storage.PendingBlock{Hash: "blk100", TxHash: "tx100", Height: 100}).String()
+	up := &storage.PaymentUpdate{
+		Balances:     map[string]float64{"minerA": 0},
+		Paid:         map[string]float64{"minerA": 50},
+		Confirmed:    []string{pb},
+		DeleteRounds: []uint64{100},
+	}
+	if err := h.db.PutPayoutIntent(up); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.SetPayoutIntentTxid("alreadysent"); err != nil {
+		t.Fatal(err)
+	}
+	h.wallet.sendmany = func(bool, map[string]float64) (string, *daemons.JsonRpcError) {
+		t.Fatal("resuming a sent intent must NOT broadcast sendmany again")
+		return "", nil
+	}
+	if err := h.pm.processPayments(); err != nil {
+		t.Fatal(err)
+	}
+	if v := h.mr.HGet("TEST:payouts", "minerA"); v != "50" {
+		t.Errorf("resumed payout = %q, want 50 (exactly once)", v)
+	}
+	if ok, _ := h.mr.SIsMember("TEST:blocks:confirmed", pb); !ok {
+		t.Error("resumed intent should confirm the block")
+	}
+	if h.mr.Exists("TEST:payouts:intent") {
+		t.Error("intent should be cleared after resume")
+	}
+}
+
+// If a run died mid-sendmany (intent present, NO txid), we can't tell whether the
+// broadcast happened — halt for review rather than risk double-paying.
+func TestPayout_HaltsOnAmbiguousIntent(t *testing.T) {
+	h := newHarness(t, &config.PaymentOptions{MinPayment: 0, MinConfirmations: 100})
+	if err := h.pm.Init(); err != nil {
+		t.Fatal(err)
+	}
+	h.seedRound(100, "tx100", map[string]float64{"minerA": 100})
+	h.db.PutPayoutIntent(&storage.PaymentUpdate{Paid: map[string]float64{"minerA": 50}}) // no txid
+	h.wallet.sendmany = func(bool, map[string]float64) (string, *daemons.JsonRpcError) {
+		t.Fatal("must not pay while an ambiguous intent is unresolved")
+		return "", nil
+	}
+	if err := h.pm.processPayments(); err == nil {
+		t.Error("processPayments must halt (error) on an intent with no txid")
+	}
+	if !h.mr.Exists("TEST:payouts:intent") {
+		t.Error("ambiguous intent must be preserved for operator review, not cleared")
+	}
+}
+
 func TestPayout_ImmatureStaysPending(t *testing.T) {
 	h := newHarness(t, &config.PaymentOptions{MinPayment: 0, MinConfirmations: 100})
 	_ = h.pm.Init()

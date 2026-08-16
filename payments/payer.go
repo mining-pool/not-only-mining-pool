@@ -1,6 +1,7 @@
 package payments
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"time"
@@ -206,7 +207,36 @@ type matureBlock struct {
 // coinbase transaction (orphan / immature / mature), split each mature block's
 // reward across that round's shares, and pay every miner over the threshold —
 // persisting balances, payouts and block state only if sendmany succeeds.
+// reconcile resolves any payout intent left by an interrupted run BEFORE new work
+// is processed, so the same blocks/shares can't be paid twice. sendmany and the
+// redis state update can't share a transaction: settle persists the intended
+// update before broadcasting and stamps the txid right after, and this closes the
+// gap on the next run.
+func (pm *PaymentManager) reconcile() error {
+	update, txid, exists, err := pm.db.GetPayoutIntent()
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	if txid != "" {
+		// The sendmany broadcast (we have its txid) but ApplyPayments was interrupted
+		// — finish it now (atomic, and it clears the intent). No re-send.
+		log.Warnf("resuming interrupted payout run (txid %s)", txid)
+		return pm.db.ApplyPayments(update)
+	}
+	// No txid: a sendmany may have broadcast in the instant before the crash. Halt
+	// rather than risk double-paying; an operator confirms against the wallet and
+	// clears the payouts:intent key to resume.
+	return fmt.Errorf("in-flight payout intent has no txid — a sendmany may have broadcast (paid=%v); "+
+		"verify the wallet, then delete the payouts:intent key to resume", update.Paid)
+}
+
 func (pm *PaymentManager) processPayments() error {
+	if err := pm.reconcile(); err != nil {
+		return err
+	}
 	if pm.options.PayMode == config.PayModePPS {
 		return pm.processPPS()
 	}
@@ -278,12 +308,14 @@ func (pm *PaymentManager) processPayments() error {
 		return pm.db.ApplyPayments(update)
 	}
 
-	if err := pm.settle(workers, update, 0); err != nil {
-		return err // sendmany failed — persist nothing, blocks stay pending for retry
-	}
+	// Build the COMPLETE update (including the blocks being confirmed) before
+	// settle, so the intent it persists before broadcasting is whole.
 	for _, mb := range matured {
 		update.Confirmed = append(update.Confirmed, mb.block.String())
 		update.DeleteRounds = append(update.DeleteRounds, mb.block.Height)
+	}
+	if err := pm.settle(workers, update, 0); err != nil {
+		return err // sendmany failed — persist nothing, blocks stay pending for retry
 	}
 	return pm.db.ApplyPayments(update)
 }
@@ -385,9 +417,14 @@ func (pm *PaymentManager) classifyBlock(pb *storage.PendingBlock) (reward float6
 	return reward, category, int64(gt.Confirmations), true
 }
 
-// settle computes each worker's payout, calls sendmany, and (on success) fills
-// the update with the new balances and payouts. On -6 (insufficient funds for
-// fees) it retries withholding a little more so miners cover the tx fee.
+// settle computes each worker's payout and, if anything is owed, persists a
+// durable intent, broadcasts sendmany, and stamps the returned txid — filling the
+// update with the resulting balances/payouts. On -6 (insufficient funds for fees)
+// it retries withholding a little more so miners cover the tx fee.
+//
+// The intent is written BEFORE the broadcast and the txid stamped immediately
+// AFTER, so a crash between sendmany and ApplyPayments is resolved by reconcile()
+// instead of paying the same round twice.
 func (pm *PaymentManager) settle(workers map[string]*worker, update *storage.PaymentUpdate, withhold float64) error {
 	amounts := map[string]float64{}
 	for _, w := range workers {
@@ -404,48 +441,70 @@ func (pm *PaymentManager) settle(workers map[string]*worker, update *storage.Pay
 		}
 	}
 
-	if len(amounts) > 0 {
-		args := []interface{}{}
-		if !pm.options.OmitSendManyDummy {
-			args = append(args, pm.options.SendManyDummy)
-		}
-		args = append(args, amounts)
-
-		_, result := pm.cmd("sendmany", args)
-		if result == nil {
-			return fmt.Errorf("no response from payment daemon on sendmany")
-		}
-		if result.Error != nil {
-			if result.Error.Code == -6 { // not enough funds to also cover the fee
-				// Geometric back-off: a gentle 1% first step covers the common case
-				// (only the tx fee is missing), then double so a large shortfall
-				// converges in a bounded number of retries instead of ~100.
-				next := withhold * 2
-				if next < 0.01 {
-					next = 0.01
-				}
-				if next >= 1 {
-					return fmt.Errorf("wallet cannot cover sendmany fees even at 100%% withholding")
-				}
-				log.Warnf("insufficient funds for fees; retrying with %.0f%% withheld", next*100)
-				return pm.settle(workers, update, next)
-			}
-			return fmt.Errorf("sendmany failed: %s", result.Error.Message)
-		}
-		if withhold > 0 {
-			log.Warnf("paid %d workers (withheld %.0f%% for fees; fund the wallet to avoid this)", len(amounts), withhold*100)
+	// Record the resulting balances/payouts in the update up front so the intent
+	// persisted before broadcasting is complete (re-filled on each withhold retry).
+	for _, w := range workers {
+		update.Balances[w.Address] = pm.SatToCoin((w.Balance + w.Reward) - w.Sent)
+		if w.Sent > 0 {
+			update.Paid[w.Address] = pm.SatToCoin(w.Sent)
 		} else {
-			log.Infof("paid %d workers", len(amounts))
+			delete(update.Paid, w.Address)
 		}
 	}
 
-	// carry the unpaid remainder forward and record what was paid.
-	for _, w := range workers {
-		newBalance := (w.Balance + w.Reward) - w.Sent
-		update.Balances[w.Address] = pm.SatToCoin(newBalance)
-		if w.Sent > 0 {
-			update.Paid[w.Address] = pm.SatToCoin(w.Sent)
+	if len(amounts) == 0 {
+		return nil // nothing to pay this run; caller still applies block/round moves
+	}
+
+	// Persist the intent BEFORE broadcasting.
+	if err := pm.db.PutPayoutIntent(update); err != nil {
+		return err
+	}
+
+	args := []interface{}{}
+	if !pm.options.OmitSendManyDummy {
+		args = append(args, pm.options.SendManyDummy)
+	}
+	args = append(args, amounts)
+
+	_, result := pm.cmd("sendmany", args)
+	if result == nil {
+		// No response — the request may or may not have broadcast. Leave the intent
+		// (txid empty) so the next run halts for review rather than risk re-paying.
+		return fmt.Errorf("no response from payment daemon on sendmany (payout intent left for review)")
+	}
+	if result.Error != nil {
+		if result.Error.Code == -6 { // node rejected before broadcast: safe to retry
+			// Geometric back-off: a gentle 1% first step covers the common case
+			// (only the tx fee is missing), then double so a large shortfall
+			// converges in a bounded number of retries instead of ~100.
+			next := withhold * 2
+			if next < 0.01 {
+				next = 0.01
+			}
+			if next >= 1 {
+				_ = pm.db.DelPayoutIntent()
+				return fmt.Errorf("wallet cannot cover sendmany fees even at 100%% withholding")
+			}
+			log.Warnf("insufficient funds for fees; retrying with %.0f%% withheld", next*100)
+			return pm.settle(workers, update, next)
 		}
+		// Any other error means the node rejected it (no broadcast) — clear the intent.
+		_ = pm.db.DelPayoutIntent()
+		return fmt.Errorf("sendmany failed: %s", result.Error.Message)
+	}
+
+	// Broadcast succeeded — stamp the txid at once so a crash before ApplyPayments
+	// is recoverable without re-sending.
+	var txid string
+	_ = json.Unmarshal(result.Result, &txid)
+	if err := pm.db.SetPayoutIntentTxid(txid); err != nil {
+		return err
+	}
+	if withhold > 0 {
+		log.Warnf("paid %d workers (txid %s; withheld %.0f%% for fees)", len(amounts), txid, withhold*100)
+	} else {
+		log.Infof("paid %d workers (txid %s)", len(amounts), txid)
 	}
 	return nil
 }
