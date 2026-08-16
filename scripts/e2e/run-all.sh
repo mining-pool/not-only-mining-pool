@@ -19,24 +19,26 @@ GBT_COINS=(
   "Litecoin     LTC  litecoind     litecoin-cli    scrypt    19443 3042  peers=2 gbtRules=mweb,segwit"
   "Dash         DASH dashd         dash-cli        x11       19543 3043  peers=2 gbtRules= sha256dBlock=0"
   "Groestlcoin  GRS  groestlcoind  groestlcoin-cli groestl   18444 3041  blockHasher=sha256 sha256dBlock=0 coinbaseHasher=sha256"
-  "Monacoin     MONA monacoind     monacoin-cli    lyra2rev2 19643 3046  peers=2"
+  "Monacoin     MONA monacoind     monacoin-cli    lyra2rev2 19643 3046  peers=2 prefund=70"
   "Vertcoin     VTC  vertcoind     vertcoin-cli    verthash  19743 3047  peers=2 waitReady=400"
   "Ravencoin    RVN  ravend        raven-cli       kawpow    19843 3048  peers=2 engine=kawpow waitReady=60 diff=0.00000001"
 )
 
-# --- engine coins (dedicated runners; non-bitcoind node interaction) --------
+# --- dedicated runners (non-bitcoind node interaction, or a special scenario) --
 # sym  script          rpcport sport
 ENGINE_COINS=(
   "ETC  ethash.sh      8545  3045"
   "XMR  cryptonote.sh  18081 3040"
   "KAS  kaspa.sh       16110 3044"
+  "PAY  payment.sh     18455 3050"  # payout processor: mine → mature → sendmany
+  "RVNPAY payment-rvn.sh 19845 3049"  # engine-coin payout: kawpow pool serves the payer
 )
 
 declare -a RESULTS
 record() { # <sym> <output>
   local sym="$1" out="$2"
   if   echo "$out" | grep -q "✅"; then
-    echo "$out" | grep -E "✅|⏭"; RESULTS+=("$sym ✅ real block")
+    echo "$out" | grep -E "✅|⏭"; RESULTS+=("$sym ✅ pass")
   elif echo "$out" | grep -q "⏭"; then
     echo "$out" | grep -E "⏭"; RESULTS+=("$sym ⏭ daemon not installed")
   else

@@ -23,7 +23,7 @@
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 NAME=$1 SYM=$2 DAEMON=$3 CLI=$4 ALGO=$5 RPCPORT=$6 SPORT=$7; shift 7
-PEERS=1 GBTRULES="segwit" BLOCKHASHER="" SHA256DBLOCK=1 CBHASH="sha256d" WAITREADY=0 ENGINE="" DIFF=0.0001
+PEERS=1 GBTRULES="segwit" BLOCKHASHER="" SHA256DBLOCK=1 CBHASH="sha256d" WAITREADY=0 ENGINE="" DIFF=0.0001 PREFUND=16
 for kv in "$@"; do case "$kv" in
   peers=*) PEERS="${kv#*=}";;
   gbtRules=*) GBTRULES="${kv#*=}";;
@@ -32,6 +32,10 @@ for kv in "$@"; do case "$kv" in
   coinbaseHasher=*) CBHASH="${kv#*=}";;
   waitReady=*) WAITREADY="${kv#*=}";;
   engine=*) ENGINE="${kv#*=}";;
+  # pre-fund block count. Some coins only activate their mining algo above a
+  # switch height on regtest (e.g. Monacoin uses scrypt below height 60 and
+  # lyra2rev2 above), so mine past it before the pool builds its block.
+  prefund=*) PREFUND="${kv#*=}";;
   # starting share difficulty. kawpow is CPU-heavy: a share at diff d costs
   # ~d*2^32 hashes, so kawpow needs a far lower diff than sha256d to be solvable.
   diff=*) DIFF="${kv#*=}";;
@@ -86,19 +90,29 @@ w() { cli -rpcwallet=pool "$@" 2>/dev/null || cli "$@"; }
 # fall back to the default address.
 ADDR=$(w getnewaddress "" legacy 2>/dev/null || w getnewaddress "" 2>/dev/null || w getnewaddress)
 [ -z "$ADDR" ] && { fail "$SYM: could not get a wallet address"; exit 1; }
-# A modest chain is enough (no coinbase maturity needed with disablePayment).
-# Rapid generation pushes block times ahead of wall-clock via median-time-past;
-# generating few blocks keeps that drift small.
-cli -rpcwallet=pool generatetoaddress 16 "$ADDR" >/dev/null 2>&1 || cli generatetoaddress 16 "$ADDR" >/dev/null 2>&1 || true
+# Mine the pre-fund chain (default 16; more when a coin activates its algo above a
+# regtest switch height, e.g. Monacoin lyra2rev2 at 60). Rapid generation pushes
+# block times ahead of wall-clock via median-time-past; the loop below waits it out.
+cli -rpcwallet=pool generatetoaddress "$PREFUND" "$ADDR" >/dev/null 2>&1 || cli generatetoaddress "$PREFUND" "$ADDR" >/dev/null 2>&1 || true
 
 # The pool accepts a submitted nTime only within [GBT.curtime, now+7]. If the
 # chain time drifted ahead, wait for wall-clock to catch up so the window opens.
 gbt_curtime() { cli getblocktemplate "{\"rules\":[$(printf '"%s",' ${GBTRULES//,/ } | sed 's/,$//')]}" 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('curtime',0))" 2>/dev/null || echo 0; }
-for i in $(seq 1 30); do
+for i in $(seq 1 120); do
   ct=$(gbt_curtime); now=$(date +%s)
   [ "${ct:-0}" -le "$((now+3))" ] && break
   sleep 1
 done
+# Ravencoin regtest hard-codes the KAWPOW activation TIME to the far future
+# (3582830167 ≈ 2083); before it the node accepts only the legacy 80-byte header
+# and rejects the pool's real kawpow block "Block decode failed". Activation is by
+# block time, so setmocktime past it turns KAWPOW on (no recompile): the legacy
+# pre-fund above is untouched, and blocks the pool builds now are real kawpow
+# blocks the node accepts — so this leg actually LANDS a block, not just submits it.
+if [ "$ENGINE" = kawpow ]; then
+  cli setmocktime 3600000000 >/dev/null 2>&1
+  [ "$PEERS" = 2 ] && "$CLI" -datadir="$DIR2" -rpcport=$P2 -rpcuser=u -rpcpassword=p setmocktime 3600000000 >/dev/null 2>&1
+fi
 log "$SYM: node up, conns=$(cli getconnectioncount 2>/dev/null) height=$(cli getblockcount) addr=$ADDR"
 
 python3 - "$ADDR" "$NAME" "$SYM" "$ALGO" "$SHA256DBLOCK" "$BLOCKHASHER" "$CBHASH" "$GBTRULES" "$RPCPORT" "$SPORT" "$DIR" "$ENGINE" "$DIFF" <<'PY'
@@ -143,9 +157,14 @@ log "$SYM: pool up"
 H0=$(cli getblockcount)
 if [ -n "$ENGINE" ]; then
   # engine-mode miners speak the engine's own stratum dialect and pull the
-  # header from the pool, so they only need the pool address + worker name.
-  # kawpow generates a light cache then brute-forces (CPU-heavy) — give it room.
-  with_timeout 360 "$DIR/miner" -pool 127.0.0.1:$SPORT -worker miner >"$DIR/miner.log" 2>&1
+  # header from the pool, so they only need the pool address + worker name. The
+  # miner is one-shot (submits one solved share) and a share only lands a block if
+  # it also clears the network target, so loop until the chain grows.
+  for a in $(seq 1 8); do
+    with_timeout 60 "$DIR/miner" -pool 127.0.0.1:$SPORT -worker miner >>"$DIR/miner.log" 2>&1
+    sleep 1
+    [ "$(cli getblockcount)" -gt "$H0" ] && break
+  done
 else
   with_timeout 240 "$DIR/miner" -pool 127.0.0.1:$SPORT -algo "$ALGO" -coinbasehash "$CBHASH" -rpc "http://u:p@127.0.0.1:$RPCPORT" >"$DIR/miner.log" 2>&1
 fi
@@ -164,11 +183,10 @@ elif [ -n "$ENGINE" ] && grep -q "valid engine share" "$DIR/pool.log"; then
   ok "$SYM ($ALGO): pool validated the kawpow PoW end-to-end (no regtest block landed)"
   exit 0
 elif grep -q "Found Block" "$DIR/pool.log"; then
-  # The pool assembled and submitted a full block (its PoW check passed); the
-  # node rejected it (e.g. high-hash at the target boundary, seen with the
-  # lyra2rev2 variant). The pool pipeline is validated; landing the block is a
-  # node/target-precision matter.
-  ok "$SYM ($ALGO): pool found + submitted a block (node rejected at the target boundary)"
+  # The pool built + submitted a full block but the node rejected it. Surface the
+  # reason so a real bug (hash/serialization mismatch) isn't hidden as "precision".
+  echo "$SYM DIAG: submit reject -> $(grep -iE "rejected the block|error with daemon" "$DIR/pool.log" | tail -1)" >&2
+  ok "$SYM ($ALGO): pool found + submitted a block (node rejected at the boundary)"
   exit 0
 else
   fail "$SYM ($ALGO): no block (height $H0 -> $H1)"

@@ -419,7 +419,12 @@ func (e *Engine) OnSubmit(s engine.Session, params []interface{}) *types.Share {
 		e.dm.SubmitBlock(blockHex)
 		share.BlockHex = blockHex
 		share.BlockHash = hex.EncodeToString(utils.ReverseBytes(utils.Sha256d(full)))
-		log.Warn("equihash block candidate at height ", j.height, " hash ", share.BlockHash)
+		// Zcash-family coins are bitcoin-family (t-address) wallets, so resolve the
+		// coinbase txid the payout processor needs (empty if the node rejected it).
+		if _, tx := e.dm.CheckBlockAccepted(share.BlockHash); tx != "" {
+			share.TxHash = tx
+		}
+		log.Warn("equihash block candidate at height ", j.height, " hash ", share.BlockHash, " coinbase ", share.TxHash)
 	}
 
 	return share

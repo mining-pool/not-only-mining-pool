@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"math/big"
 	"net"
+	"strings"
 
 	"github.com/mining-pool/not-only-mining-pool/daemons"
 	"github.com/mining-pool/not-only-mining-pool/engine"
+	"github.com/mining-pool/not-only-mining-pool/types"
 	"github.com/mining-pool/not-only-mining-pool/utils"
 )
 
@@ -210,16 +212,41 @@ func (sc *Client) handleEngineMessage(message *daemons.JsonRpcRequest) {
 		}
 
 		share := sc.Engine.OnSubmit(sess, rawParamsToIface(message.Params))
+		achievedDiff := share.Diff // engines report the achieved hash difficulty here
+		// vardiff boundary tolerance: honour a share that met the difficulty in
+		// force before the last retarget — the miner may still be on work targeted
+		// at the previous difficulty (engines that never emit ErrLowDiffShare, e.g.
+		// node-authoritative beam, are unaffected).
+		if share.ErrorCode == types.ErrLowDiffShare && sc.meetsPreviousEngineDiff(achievedDiff) {
+			share.ErrorCode = 0
+		}
 		valid := share.ErrorCode == 0
 
-		// TODO(engine): persist share to storage for stats/payments (the engine
-		// already submits solved blocks to the node). Requires a storage handle
-		// on the engine-mode client; tracked in docs/PLUGGABLE_ENGINES_zh.md.
 		if valid {
+			// Credit the ASSIGNED difficulty (the unit of share work), not the
+			// achieved hash difficulty — otherwise a block-solving share would
+			// dominate a PROP/PPLNS round (matches the GBT accounting fix).
+			share.Miner, share.Rig = splitWorker(sc.WorkerName)
+			share.Diff = sc.creditedEngineDiff(achievedDiff)
+			// A block is payable (recorded as pending) only if the engine resolved
+			// its coinbase txid, i.e. a bitcoin-family coin like Ravencoin whose
+			// wallet the payout processor can drive. Other engines' blocks are left
+			// as ordinary share contributions (their payout is coin-specific).
+			blockAccepted := share.TxHash != ""
+			if share.BlockHex != "" && !blockAccepted {
+				share.BlockHex = ""
+			}
 			log.Info(sc.WorkerName, " submitted a valid engine share, diff=", share.Diff)
+			if sc.DB != nil {
+				sc.DB.PutShare(share, blockAccepted)
+			}
 			sc.applyEngineVarDiff()
 		} else {
 			log.Warn(sc.WorkerName, "'s engine share invalid: ", share.ErrorCode.String())
+			if sc.DB != nil {
+				share.Miner, share.Rig = splitWorker(sc.WorkerName)
+				sc.DB.PutShare(share, false)
+			}
 		}
 
 		if sc.ShouldBan(valid) {
@@ -246,7 +273,9 @@ func (sc *Client) handleEngineMessage(message *daemons.JsonRpcRequest) {
 }
 
 // applyEngineVarDiff retargets the client difficulty and re-pushes work when the
-// new target differs (ethash carries the target inside the work package).
+// new target differs (engines carry the target inside the work package). It
+// records the outgoing difficulty as PreviousDifficulty so a share the miner
+// already found against the old target is still honoured (see meetsPreviousEngineDiff).
 func (sc *Client) applyEngineVarDiff() {
 	if sc.VarDiff == nil || sc.CurrentDifficulty == nil {
 		return
@@ -254,10 +283,46 @@ func (sc *Client) applyEngineVarDiff() {
 	cur, _ := sc.CurrentDifficulty.Float64()
 	next := sc.VarDiff.CalcNextDiff(cur)
 	if next != 0 && next != cur {
+		sc.PreviousDifficulty = sc.CurrentDifficulty
 		sc.CurrentDifficulty = big.NewFloat(next)
-		log.Info("ethash vardiff retarget ", sc.WorkerName, " -> ", next)
+		log.Info("engine vardiff retarget ", sc.WorkerName, " ", cur, " -> ", next)
 		sc.sendEngineWork()
 	}
+}
+
+// meetsPreviousEngineDiff reports whether an achieved share difficulty satisfies
+// the difficulty in force before the most recent vardiff retarget. It lets a
+// share found against the previous (lower) target through after a retarget
+// raised the difficulty, mirroring the GBT path's prevDiff tolerance.
+func (sc *Client) meetsPreviousEngineDiff(achieved float64) bool {
+	if sc.PreviousDifficulty == nil {
+		return false
+	}
+	prev, _ := sc.PreviousDifficulty.Float64()
+	return prev > 0 && achieved >= prev
+}
+
+// creditedEngineDiff returns the assigned difficulty a valid share is worth: the
+// current difficulty normally, or the previous one for a share tolerated at the
+// retarget boundary (it only met the pre-retarget difficulty).
+func (sc *Client) creditedEngineDiff(achieved float64) float64 {
+	cur := sc.engineDiff()
+	if achieved >= cur || sc.PreviousDifficulty == nil {
+		return cur
+	}
+	if prev, _ := sc.PreviousDifficulty.Float64(); prev > 0 && achieved >= prev {
+		return prev
+	}
+	return cur
+}
+
+// splitWorker parses a "miner.rig" worker name into its payout address and rig,
+// matching the GBT path so engine and Bitcoin shares key stats the same way.
+func splitWorker(workerName string) (miner, rig string) {
+	if i := strings.IndexByte(workerName, '.'); i >= 0 {
+		return workerName[:i], workerName[i+1:]
+	}
+	return workerName, "unknown"
 }
 
 // rawParamsToIface decodes request params for engine dispatch: array params

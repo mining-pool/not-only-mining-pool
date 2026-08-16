@@ -109,6 +109,48 @@ Most GPU algorithms only have C implementations. Put the C source under
 from an `init()` behind a build tag, and build with `CGO_ENABLED=1 go build -tags
 <algo> ./cmd/nomp`. `neoscrypt` (`github.com/sparkspay/go-neoscrypt`) is a worked example.
 
+## Payments (configurable reward scheme, fork-configurable)
+
+Set `disablePayment: false` and add a `payment` block to pay miners automatically.
+When a share solves a block the current round is sealed; once the block's coinbase
+reaches maturity its reward is attributed to miners per the selected `payMode` and
+paid via `sendmany`. Balances below `minPayment` carry over.
+
+```json
+"disablePayment": false,
+"payment": {
+  "interval": 600,           // seconds between payout runs
+  "minPayment": 0.05,        // min coin owed before a miner is paid (else carried over)
+  "daemon": 0,               // index into daemons[] used for wallet RPC
+  "payMode": "prop",         // "prop" | "pplns" | "solo" | "pps"
+  "pplnsWindow": 0,          // pplns look-back as total share difficulty; 0 = the block's round
+  "ppsRate": 0,              // pps price per share difficulty unit (coin); required for pps
+  "magnitude": 0,            // base units per coin (1e8); 0 = auto-detect
+  "minConfirmations": 100,   // coinbase maturity before a reward is paid
+  "addressCheckMethod": "getaddressinfo", // or "validateaddress" on older forks
+  "sendManyDummy": "",       // leading sendmany arg (Bitcoin Core wants "")
+  "omitSendManyDummy": false // true if the fork's sendmany drops the leading arg
+}
+```
+
+**`payMode`** selects the reward scheme:
+- **`prop`** (default) — split the block reward proportionally to the shares of
+  the round that found it.
+- **`pplns`** — split proportionally to the last `pplnsWindow` difficulty of
+  shares across rounds (a sliding window; resists pool-hopping). `pplnsWindow: 0`
+  falls back to the block's own round.
+- **`solo`** — the miner who found the block takes the whole reward.
+- **`pps`** — pay a fixed `ppsRate` per share difficulty **immediately** (each run
+  credits shares since a cursor and pays); found blocks refill the pool wallet
+  instead of being distributed, so the **pool** carries the luck variance.
+
+The remaining knobs let one binary pay out across bitcoind-family **forks** whose
+wallet RPC differs: coinbase maturity (`minConfirmations`), coin precision
+(`magnitude`), the address-ownership check (`addressCheckMethod`), and the
+`sendmany` shape (`sendManyDummy` / `omitSendManyDummy`). The payout wallet must
+own `poolAddress` (verified at startup). Miners are paid to their worker name, so
+they connect with their wallet address as the username.
+
 ## Add a category-C coin (an engine)
 
 Category-C coins are already supported by pluggable engines — you don't write one,

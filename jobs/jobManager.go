@@ -81,7 +81,7 @@ func (jm *JobManager) ProcessShare(share *types.Share) {
 		log.Info("submitting new Block: ", share.BlockHex)
 		jm.DaemonManager.SubmitBlock(share.BlockHex)
 
-		isAccepted, tx = jm.CheckBlockAccepted(share.BlockHash)
+		isAccepted, tx = jm.DaemonManager.CheckBlockAccepted(share.BlockHash)
 		share.TxHash = tx
 		if isAccepted {
 			log.Info("Block ", share.BlockHash, " Accepted! generation tx: ", share.TxHash, ". Wait for pendding!")
@@ -94,31 +94,11 @@ func (jm *JobManager) ProcessShare(share *types.Share) {
 		jm.ProcessTemplate(gbt)
 	}
 
-	// notValidBlock but isValidShare
-	go jm.Storage.PutShare(share, isAccepted)
+	// notValidBlock but isValidShare. PutShare enqueues to a single ordered writer
+	// (no goroutine here), so a block's round seal is ordered relative to the
+	// shares it should contain.
+	jm.Storage.PutShare(share, isAccepted)
 
-}
-
-func (jm *JobManager) CheckBlockAccepted(blockHash string) (isAccepted bool, tx string) {
-	_, results := jm.DaemonManager.CmdAll("getblock", []interface{}{blockHash})
-
-	isAccepted = true
-	for i := range results {
-		isAccepted = isAccepted && results[i] != nil && results[i].Error == nil
-	}
-
-	for i := range results {
-		if results[i] == nil {
-			continue
-		}
-
-		gb := daemons.BytesToGetBlock(results[i].Result)
-		if gb.Tx != nil {
-			return isAccepted, gb.Tx[0]
-		}
-	}
-
-	return isAccepted, ""
 }
 
 // UpdateCurrentJob updates the job when mining the same height but tx changes
@@ -289,7 +269,11 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 		new(big.Float).SetInt(new(big.Int).Mul(algorithm.MaxTargetTruncated, big.NewInt(1<<jm.Options.Algorithm.Multiplier))),
 		new(big.Float).SetInt(headerHashBigInt),
 	)
-	shareDiff, _ := bigShareDiff.Float64()
+	// Share.Diff records the WORK CREDITED for this share — the miner's assigned
+	// difficulty, not the achieved hash difficulty. Crediting the achieved value
+	// would let a block-solving share (which reaches network difficulty) dominate a
+	// whole PROP/PPLNS round and give lucky hashes arbitrary PPS credit.
+	assignedDiff, _ := diff.Float64()
 
 	// Check if share is a block candidate (reaches network difficulty)
 	if job.Target.Cmp(headerHashBigInt) > 0 {
@@ -315,7 +299,7 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 
 			BlockHeight: job.GetBlockTemplate.Height,
 			BlockReward: job.GetBlockTemplate.CoinbaseValue,
-			Diff:        shareDiff,
+			Diff:        assignedDiff,
 			BlockHash:   blockHash,
 			BlockHex:    blockHex,
 		}
@@ -325,6 +309,7 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 	if new(big.Float).Quo(bigShareDiff, diff).Cmp(big.NewFloat(0.99)) < 0 {
 		// Check if share matched a previous difficulty from before a vardiff retarget
 		if prevDiff != nil && bigShareDiff.Cmp(prevDiff) >= 0 {
+			prevAssigned, _ := prevDiff.Float64() // credited at the pre-retarget difficulty it satisfied
 			return &types.Share{
 				JobId:      jobId,
 				RemoteAddr: ipAddr,
@@ -333,7 +318,7 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 
 				BlockHeight: job.GetBlockTemplate.Height,
 				BlockReward: job.GetBlockTemplate.CoinbaseValue,
-				Diff:        shareDiff,
+				Diff:        prevAssigned,
 			}
 		} else {
 			return &types.Share{
@@ -353,7 +338,7 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 		Miner:      miner,
 		Rig:        rig,
 
-		Diff: shareDiff,
+		Diff: assignedDiff,
 	}
 }
 

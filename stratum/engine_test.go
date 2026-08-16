@@ -4,13 +4,18 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"math/big"
 	"net"
+	"strconv"
 	"testing"
 	"time"
+
+	"github.com/alicebob/miniredis/v2"
 
 	"github.com/mining-pool/not-only-mining-pool/config"
 	"github.com/mining-pool/not-only-mining-pool/daemons"
 	"github.com/mining-pool/not-only-mining-pool/engine"
+	"github.com/mining-pool/not-only-mining-pool/storage"
 	"github.com/mining-pool/not-only-mining-pool/types"
 )
 
@@ -30,8 +35,12 @@ func (f *fakeConn) SetWriteDeadline(t time.Time) error { return nil }
 
 // fakeEngine implements engine.Engine plus the per-difficulty job capability.
 type fakeEngine struct {
-	submits [][]interface{}
-	valid   bool
+	submits   [][]interface{}
+	valid     bool
+	shareDiff float64 // if >0, the achieved difficulty OnSubmit reports
+	blockHex  string  // if set, OnSubmit reports a block-solving share
+	txHash    string  // resolved coinbase txid (empty => non-payable block)
+	height    int64
 }
 
 func (f *fakeEngine) Name() string                     { return "fake" }
@@ -48,7 +57,17 @@ func (f *fakeEngine) JobParamsForDifficulty(diff float64) []interface{} {
 }
 func (f *fakeEngine) OnSubmit(s engine.Session, params []interface{}) *types.Share {
 	f.submits = append(f.submits, params)
-	share := &types.Share{Miner: s.WorkerName(), RemoteAddr: s.RemoteAddr(), Diff: s.Difficulty()}
+	diff := s.Difficulty()
+	if f.shareDiff > 0 {
+		diff = f.shareDiff
+	}
+	share := &types.Share{Miner: s.WorkerName(), RemoteAddr: s.RemoteAddr(), Diff: diff}
+	if f.blockHex != "" {
+		share.BlockHex = f.blockHex
+		share.BlockHash = "blkhash"
+		share.TxHash = f.txHash
+		share.BlockHeight = f.height
+	}
 	if !f.valid {
 		share.ErrorCode = types.ErrLowDiffShare
 	}
@@ -298,5 +317,134 @@ func TestEngineRejectsInvalidShareAndUnauthorized(t *testing.T) {
 	msgs = drainResponses(t, out)
 	if len(msgs) != 1 || msgs[0]["result"] != false || msgs[0]["error"] == nil {
 		t.Fatalf("invalid share should reply false with error: %v", msgs)
+	}
+}
+
+// A valid engine share is persisted for stats/accounting, credited at the
+// assigned difficulty and keyed by the miner's payout address (worker.rig split).
+func TestEngineSharePersisted(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mr.Close()
+	host, portStr, _ := net.SplitHostPort(mr.Addr())
+	port, _ := strconv.Atoi(portStr)
+	db := storage.NewStorage("TESTENG", &config.RedisOptions{Network: "tcp", Host: host, Port: port})
+
+	eng := &fakeEngine{valid: true}
+	sc, _ := newEngineTestClient(eng)
+	sc.DB = db
+	sc.IsAuthorized = true
+	sc.WorkerName = "minerAddr.rig1"
+	sc.CurrentDifficulty = big.NewFloat(8)
+
+	sc.HandleMessage(req("eth_submitWork", "0xn", "0xh", "0xm"))
+
+	// PutShare runs asynchronously; poll briefly for the round contribution.
+	var got string
+	for i := 0; i < 100; i++ {
+		if got = mr.HGet("TESTENG:shares:roundCurrent", "minerAddr"); got != "" {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got != "8" {
+		t.Errorf("round contribution for minerAddr = %q, want 8 (assigned diff)", got)
+	}
+	if ok, _ := mr.SIsMember("TESTENG:miner:minerAddr:rigs", "rig1"); !ok {
+		t.Error("rig1 should be indexed under minerAddr")
+	}
+	if ok, _ := mr.SIsMember("TESTENG:pool:miners", "minerAddr"); !ok {
+		t.Error("minerAddr should be indexed in pool:miners")
+	}
+}
+
+// A bitcoin-family engine block (coinbase txid resolved) is sealed as a pending,
+// payable block; a block without a txid is kept as an ordinary share only.
+func TestEngineBlockShareRecording(t *testing.T) {
+	newDB := func(t *testing.T) (*storage.DB, *miniredis.Miniredis) {
+		mr, err := miniredis.Run()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(mr.Close)
+		host, portStr, _ := net.SplitHostPort(mr.Addr())
+		port, _ := strconv.Atoi(portStr)
+		return storage.NewStorage("TESTENG", &config.RedisOptions{Network: "tcp", Host: host, Port: port}), mr
+	}
+	submit := func(sc *Client) {
+		sc.IsAuthorized = true
+		sc.WorkerName = "minerAddr"
+		sc.CurrentDifficulty = big.NewFloat(8)
+		sc.HandleMessage(req("eth_submitWork", "0xn", "0xh", "0xm"))
+	}
+
+	t.Run("payable block becomes pending", func(t *testing.T) {
+		db, mr := newDB(t)
+		sc, _ := newEngineTestClient(&fakeEngine{valid: true, blockHex: "00aa", txHash: "coinbaseTx", height: 42})
+		sc.DB = db
+		submit(sc)
+		var members []string
+		for i := 0; i < 100; i++ {
+			members, _ = mr.SMembers("TESTENG:blocks:pending")
+			if len(members) > 0 {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if len(members) != 1 || !bytes.Contains([]byte(members[0]), []byte("coinbaseTx")) {
+			t.Fatalf("expected one pending block carrying the coinbase txid, got %v", members)
+		}
+		if !mr.Exists("TESTENG:shares:round42") {
+			t.Error("the block's round should be sealed to round42")
+		}
+	})
+
+	t.Run("block without txid stays a share", func(t *testing.T) {
+		db, mr := newDB(t)
+		sc, _ := newEngineTestClient(&fakeEngine{valid: true, blockHex: "00aa", txHash: "", height: 42})
+		sc.DB = db
+		submit(sc)
+		// the share is still recorded...
+		var got string
+		for i := 0; i < 100; i++ {
+			if got = mr.HGet("TESTENG:shares:roundCurrent", "minerAddr"); got != "" {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if got != "8" {
+			t.Errorf("share contribution = %q, want 8", got)
+		}
+		// ...but no payable pending block is recorded.
+		if members, _ := mr.SMembers("TESTENG:blocks:pending"); len(members) != 0 {
+			t.Errorf("a block without a coinbase txid must not be recorded as pending: %v", members)
+		}
+	})
+}
+
+// After a vardiff retarget raises the difficulty, a share that still meets the
+// previous difficulty is honoured; one below both is rejected.
+func TestEngineVarDiffBoundaryTolerance(t *testing.T) {
+	eng := &fakeEngine{valid: false, shareDiff: 8} // engine would flag ErrLowDiffShare
+	sc, out := newEngineTestClient(eng)
+	sc.IsAuthorized = true
+	sc.PreviousDifficulty = big.NewFloat(8) // difficulty before the retarget
+	sc.CurrentDifficulty = big.NewFloat(16) // retarget raised it
+
+	// achieved 8 meets the previous difficulty -> accepted despite ErrLowDiffShare
+	sc.HandleMessage(req("eth_submitWork", "0xn", "0xh", "0xm"))
+	msgs := drainResponses(t, out)
+	if len(msgs) != 1 || msgs[0]["result"] != true || msgs[0]["error"] != nil {
+		t.Fatalf("share meeting the previous difficulty should be accepted: %v", msgs)
+	}
+
+	// achieved 4 is below both current and previous -> still rejected
+	eng.shareDiff = 4
+	sc.HandleMessage(req("eth_submitWork", "0xn", "0xh", "0xm"))
+	msgs = drainResponses(t, out)
+	if len(msgs) != 1 || msgs[0]["result"] != false || msgs[0]["error"] == nil {
+		t.Fatalf("share below both difficulties should be rejected: %v", msgs)
 	}
 }

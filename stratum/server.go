@@ -16,6 +16,7 @@ import (
 	"github.com/mining-pool/not-only-mining-pool/daemons"
 	"github.com/mining-pool/not-only-mining-pool/engine"
 	"github.com/mining-pool/not-only-mining-pool/jobs"
+	"github.com/mining-pool/not-only-mining-pool/storage"
 	"github.com/mining-pool/not-only-mining-pool/vardiff"
 )
 
@@ -36,6 +37,8 @@ type Server struct {
 	// Engine, when non-nil, drives an alternative mining model (e.g. ethash);
 	// the server then skips the Bitcoin/GBT rebroadcast loop.
 	Engine engine.Engine
+	// DB persists engine-mode shares (the GBT path persists via JobManager.Storage).
+	DB *storage.DB
 
 	rebroadcastTicker *time.Ticker
 }
@@ -130,6 +133,7 @@ func (ss *Server) HandleNewClient(socket net.Conn) []byte {
 	subscriptionID := ss.SubscriptionCounter.Next()
 	client := NewStratumClient(subscriptionID, socket, ss.Options, ss.JobManager, ss.BanningManager)
 	client.Engine = ss.Engine
+	client.DB = ss.DB
 	ss.clientsMu.Lock()
 	ss.StratumClients[binary.LittleEndian.Uint64(subscriptionID)] = client
 	ss.clientsMu.Unlock()

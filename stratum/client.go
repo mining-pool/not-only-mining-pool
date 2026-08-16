@@ -19,6 +19,7 @@ import (
 	"github.com/mining-pool/not-only-mining-pool/daemons"
 	"github.com/mining-pool/not-only-mining-pool/engine"
 	"github.com/mining-pool/not-only-mining-pool/jobs"
+	"github.com/mining-pool/not-only-mining-pool/storage"
 	"github.com/mining-pool/not-only-mining-pool/utils"
 	"github.com/mining-pool/not-only-mining-pool/vardiff"
 )
@@ -55,6 +56,9 @@ type Client struct {
 	// Engine, when non-nil, switches this client to a pluggable mining engine
 	// (e.g. ethash). The Bitcoin/GBT path is used when Engine is nil.
 	Engine engine.Engine
+	// DB persists engine-mode shares for stats/accounting (nil in the GBT path,
+	// which persists via JobManager.Storage instead).
+	DB *storage.DB
 }
 
 func NewStratumClient(subscriptionId []byte, socket net.Conn, options *config.Options, jm *jobs.JobManager, bm *bans.BanningManager) *Client {

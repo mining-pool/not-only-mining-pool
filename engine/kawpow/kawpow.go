@@ -323,8 +323,18 @@ func (e *Engine) OnSubmit(s engine.Session, params []interface{}) *types.Share {
 		blockHex := hex.EncodeToString(j.serializeBlock(nonce, mix))
 		e.dm.SubmitBlock(blockHex)
 		share.BlockHex = blockHex
-		share.BlockHash = hex.EncodeToString(utils.ReverseBytes(utils.Sha256d(j.fullHeader(nonce, mix))))
-		log.Warn("kawpow block candidate at height ", j.height, " hash ", share.BlockHash)
+		// A KAWPOW block's id is its progpow final hash (Ravencoin CBlockHeader::
+		// GetHash → KAWPOWHash_OnlyMix), NOT sha256d of the header — the digest the
+		// PoW already produced. Using sha256d here yields a hash the node doesn't
+		// know, so getblock/CheckBlockAccepted can't resolve the coinbase txid.
+		share.BlockHash = hex.EncodeToString(digest)
+		// Ravencoin is bitcoin-family, so resolve the coinbase txid the payout
+		// processor needs to attribute this block's reward (empty if the node
+		// rejected it — the share stays a normal contribution then).
+		if _, tx := e.dm.CheckBlockAccepted(share.BlockHash); tx != "" {
+			share.TxHash = tx
+		}
+		log.Warn("kawpow block candidate at height ", j.height, " hash ", share.BlockHash, " coinbase ", share.TxHash)
 	}
 
 	return share

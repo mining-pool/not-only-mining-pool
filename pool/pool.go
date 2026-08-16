@@ -19,6 +19,7 @@ import (
 	"github.com/mining-pool/not-only-mining-pool/engine"
 	"github.com/mining-pool/not-only-mining-pool/jobs"
 	"github.com/mining-pool/not-only-mining-pool/p2p"
+	"github.com/mining-pool/not-only-mining-pool/payments"
 	"github.com/mining-pool/not-only-mining-pool/storage"
 	"github.com/mining-pool/not-only-mining-pool/stratum"
 	"github.com/mining-pool/not-only-mining-pool/utils"
@@ -42,6 +43,7 @@ type Pool struct {
 	Recipients                 []*config.Recipient
 	ProtocolVersion            int
 	APIServer                  *api.Server
+	PaymentManager             *payments.PaymentManager
 
 	// Engine is set for non-GBT mining models (e.g. ethash). When set, Init
 	// skips the entire Bitcoin daemon/jobmanager/payments machinery.
@@ -68,13 +70,27 @@ func NewEnginePool(options *config.Options) *Pool {
 
 	ss := stratum.NewStratumServer(options, nil, bm)
 	ss.Engine = eng
+	ss.DB = db // engine-mode share persistence (stats/accounting)
+
+	// Payout is available to bitcoin-family engine coins (e.g. Ravencoin/kawpow),
+	// whose shares carry a coinbase txid the payment processor can attribute.
+	// Non-bitcoin engines leave payments disabled; enabling one there fails fast
+	// in PaymentManager.Init when the wallet RPCs are unavailable.
+	var dm *daemons.DaemonManager
+	var pm *payments.PaymentManager
+	if !options.DisablePayment && options.PaymentOptions != nil {
+		dm = daemons.NewDaemonManager(options.Daemons, options.Coin)
+		pm = payments.NewPaymentManager(options.PaymentOptions, options.PoolAddress, dm, db)
+	}
 
 	return &Pool{
-		Options:       options,
-		Engine:        eng,
-		APIServer:     apiServer,
-		StratumServer: ss,
-		Stats:         NewStats(),
+		Options:        options,
+		Engine:         eng,
+		APIServer:      apiServer,
+		StratumServer:  ss,
+		DaemonManager:  dm,
+		PaymentManager: pm,
+		Stats:          NewStats(),
 	}
 }
 
@@ -135,12 +151,14 @@ func NewPool(options *config.Options) *Pool {
 	jm := jobs.NewJobManager(options, dm, db)
 	bm := bans.NewBanningManager(options.Banning)
 	s := api.NewAPIServer(options, db)
+	pm := payments.NewPaymentManager(options.PaymentOptions, options.PoolAddress, dm, db)
 
 	return &Pool{
-		Options:       options,
-		DaemonManager: dm,
-		JobManager:    jm,
-		APIServer:     s,
+		Options:        options,
+		DaemonManager:  dm,
+		JobManager:     jm,
+		APIServer:      s,
+		PaymentManager: pm,
 
 		StratumServer: stratum.NewStratumServer(options, jm, bm),
 		Magnitude:     uint64(magnitude),
@@ -149,13 +167,14 @@ func NewPool(options *config.Options) *Pool {
 	}
 }
 
-//
 func (p *Pool) Init() {
 	if p.Engine != nil {
 		// Engine-driven pool: the engine already fetched its first work in
-		// NewEnginePool; just serve stratum + API. No GBT/p2p/payment machinery.
+		// NewEnginePool; just serve stratum + API (no GBT/p2p machinery). Payout
+		// runs only for bitcoin-family engine coins that enabled it.
 		p.StartStratumServer()
 		p.APIServer.Serve()
+		p.startPaymentsIfEnabled()
 		log.Warnf("Stratum Pool Server Started for %s [%s] using the %q engine, serving ports %v",
 			p.Options.Coin.Name, strings.ToUpper(p.Options.Coin.Symbol), p.Engine.Name(), p.Stats.StratumPorts)
 		return
@@ -177,7 +196,22 @@ func (p *Pool) Init() {
 	p.StartStratumServer()
 	p.APIServer.Serve()
 
+	p.startPaymentsIfEnabled()
+
 	p.OutputPoolInfo()
+}
+
+// startPaymentsIfEnabled initializes and serves the payout processor when
+// payments are configured. It is a no-op otherwise, and fatal if the wallet
+// cannot be validated (e.g. payments enabled on a non-bitcoin-family coin).
+func (p *Pool) startPaymentsIfEnabled() {
+	if p.Options.DisablePayment || p.Options.PaymentOptions == nil {
+		return
+	}
+	if err := p.PaymentManager.Init(); err != nil {
+		log.Fatal("payment processing init failed: ", err)
+	}
+	go p.PaymentManager.Serve()
 }
 
 func (p *Pool) SetupP2PBlockNotify() {
