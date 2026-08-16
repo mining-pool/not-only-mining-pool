@@ -99,6 +99,16 @@ for i in $(seq 1 30); do
   [ "${ct:-0}" -le "$((now+3))" ] && break
   sleep 1
 done
+# Ravencoin regtest hard-codes the KAWPOW activation TIME to the far future
+# (3582830167 ≈ 2083); before it the node accepts only the legacy 80-byte header
+# and rejects the pool's real kawpow block "Block decode failed". Activation is by
+# block time, so setmocktime past it turns KAWPOW on (no recompile): the legacy
+# pre-fund above is untouched, and blocks the pool builds now are real kawpow
+# blocks the node accepts — so this leg actually LANDS a block, not just submits it.
+if [ "$ENGINE" = kawpow ]; then
+  cli setmocktime 3600000000 >/dev/null 2>&1
+  [ "$PEERS" = 2 ] && "$CLI" -datadir="$DIR2" -rpcport=$P2 -rpcuser=u -rpcpassword=p setmocktime 3600000000 >/dev/null 2>&1
+fi
 log "$SYM: node up, conns=$(cli getconnectioncount 2>/dev/null) height=$(cli getblockcount) addr=$ADDR"
 
 python3 - "$ADDR" "$NAME" "$SYM" "$ALGO" "$SHA256DBLOCK" "$BLOCKHASHER" "$CBHASH" "$GBTRULES" "$RPCPORT" "$SPORT" "$DIR" "$ENGINE" "$DIFF" <<'PY'
@@ -143,9 +153,14 @@ log "$SYM: pool up"
 H0=$(cli getblockcount)
 if [ -n "$ENGINE" ]; then
   # engine-mode miners speak the engine's own stratum dialect and pull the
-  # header from the pool, so they only need the pool address + worker name.
-  # kawpow generates a light cache then brute-forces (CPU-heavy) — give it room.
-  with_timeout 360 "$DIR/miner" -pool 127.0.0.1:$SPORT -worker miner >"$DIR/miner.log" 2>&1
+  # header from the pool, so they only need the pool address + worker name. The
+  # miner is one-shot (submits one solved share) and a share only lands a block if
+  # it also clears the network target, so loop until the chain grows.
+  for a in $(seq 1 8); do
+    with_timeout 60 "$DIR/miner" -pool 127.0.0.1:$SPORT -worker miner >>"$DIR/miner.log" 2>&1
+    sleep 1
+    [ "$(cli getblockcount)" -gt "$H0" ] && break
+  done
 else
   with_timeout 240 "$DIR/miner" -pool 127.0.0.1:$SPORT -algo "$ALGO" -coinbasehash "$CBHASH" -rpc "http://u:p@127.0.0.1:$RPCPORT" >"$DIR/miner.log" 2>&1
 fi
