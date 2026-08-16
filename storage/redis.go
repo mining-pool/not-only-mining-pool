@@ -21,7 +21,13 @@ const pplnsLogCap = 200000
 
 type DB struct {
 	*redis.Client
-	coin string
+	coin   string
+	shares chan shareJob
+}
+
+type shareJob struct {
+	share    *types.Share
+	accepted bool
 }
 
 func NewStorage(coinName string, options *config.RedisOptions) *DB {
@@ -36,13 +42,32 @@ func NewStorage(coinName string, options *config.RedisOptions) *DB {
 		log.Panicf("failed to connect to the redis server: %s %s", result, err)
 	}
 
-	return &DB{
+	db := &DB{
 		Client: client,
 		coin:   coinName,
+		shares: make(chan shareJob, 4096),
+	}
+	go db.shareWriter()
+	return db
+}
+
+// PutShare enqueues a share for the single ordered writer and returns at once, so
+// a submitting client goroutine never blocks on redis. Ordering matters: shares
+// are applied FIFO so a block's round seal (Rename roundCurrent -> round<height>)
+// captures exactly the shares recorded before it — a per-share goroutine let the
+// seal race the round-contribution increments and mis-attribute rounds.
+func (s *DB) PutShare(share *types.Share, accepted bool) {
+	s.shares <- shareJob{share: share, accepted: accepted}
+}
+
+// shareWriter drains the queue and applies each share in submission order.
+func (s *DB) shareWriter() {
+	for job := range s.shares {
+		s.putShareNow(job.share, job.accepted)
 	}
 }
 
-func (s *DB) PutShare(share *types.Share, accepted bool) {
+func (s *DB) putShareNow(share *types.Share, accepted bool) {
 	now := time.Now().Unix()
 
 	ppl := s.Pipeline()

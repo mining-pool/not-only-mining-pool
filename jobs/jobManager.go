@@ -94,8 +94,10 @@ func (jm *JobManager) ProcessShare(share *types.Share) {
 		jm.ProcessTemplate(gbt)
 	}
 
-	// notValidBlock but isValidShare
-	go jm.Storage.PutShare(share, isAccepted)
+	// notValidBlock but isValidShare. PutShare enqueues to a single ordered writer
+	// (no goroutine here), so a block's round seal is ordered relative to the
+	// shares it should contain.
+	jm.Storage.PutShare(share, isAccepted)
 
 }
 

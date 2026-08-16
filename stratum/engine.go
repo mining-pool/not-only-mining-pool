@@ -238,14 +238,14 @@ func (sc *Client) handleEngineMessage(message *daemons.JsonRpcRequest) {
 			}
 			log.Info(sc.WorkerName, " submitted a valid engine share, diff=", share.Diff)
 			if sc.DB != nil {
-				go sc.DB.PutShare(share, blockAccepted)
+				sc.DB.PutShare(share, blockAccepted)
 			}
 			sc.applyEngineVarDiff()
 		} else {
 			log.Warn(sc.WorkerName, "'s engine share invalid: ", share.ErrorCode.String())
 			if sc.DB != nil {
 				share.Miner, share.Rig = splitWorker(sc.WorkerName)
-				go sc.DB.PutShare(share, false)
+				sc.DB.PutShare(share, false)
 			}
 		}
 
