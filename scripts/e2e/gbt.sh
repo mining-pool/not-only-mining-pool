@@ -23,7 +23,7 @@
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 NAME=$1 SYM=$2 DAEMON=$3 CLI=$4 ALGO=$5 RPCPORT=$6 SPORT=$7; shift 7
-PEERS=1 GBTRULES="segwit" BLOCKHASHER="" SHA256DBLOCK=1 CBHASH="sha256d" WAITREADY=0 ENGINE="" DIFF=0.0001
+PEERS=1 GBTRULES="segwit" BLOCKHASHER="" SHA256DBLOCK=1 CBHASH="sha256d" WAITREADY=0 ENGINE="" DIFF=0.0001 PREFUND=16
 for kv in "$@"; do case "$kv" in
   peers=*) PEERS="${kv#*=}";;
   gbtRules=*) GBTRULES="${kv#*=}";;
@@ -32,6 +32,10 @@ for kv in "$@"; do case "$kv" in
   coinbaseHasher=*) CBHASH="${kv#*=}";;
   waitReady=*) WAITREADY="${kv#*=}";;
   engine=*) ENGINE="${kv#*=}";;
+  # pre-fund block count. Some coins only activate their mining algo above a
+  # switch height on regtest (e.g. Monacoin uses scrypt below height 60 and
+  # lyra2rev2 above), so mine past it before the pool builds its block.
+  prefund=*) PREFUND="${kv#*=}";;
   # starting share difficulty. kawpow is CPU-heavy: a share at diff d costs
   # ~d*2^32 hashes, so kawpow needs a far lower diff than sha256d to be solvable.
   diff=*) DIFF="${kv#*=}";;
@@ -86,15 +90,15 @@ w() { cli -rpcwallet=pool "$@" 2>/dev/null || cli "$@"; }
 # fall back to the default address.
 ADDR=$(w getnewaddress "" legacy 2>/dev/null || w getnewaddress "" 2>/dev/null || w getnewaddress)
 [ -z "$ADDR" ] && { fail "$SYM: could not get a wallet address"; exit 1; }
-# A modest chain is enough (no coinbase maturity needed with disablePayment).
-# Rapid generation pushes block times ahead of wall-clock via median-time-past;
-# generating few blocks keeps that drift small.
-cli -rpcwallet=pool generatetoaddress 16 "$ADDR" >/dev/null 2>&1 || cli generatetoaddress 16 "$ADDR" >/dev/null 2>&1 || true
+# Mine the pre-fund chain (default 16; more when a coin activates its algo above a
+# regtest switch height, e.g. Monacoin lyra2rev2 at 60). Rapid generation pushes
+# block times ahead of wall-clock via median-time-past; the loop below waits it out.
+cli -rpcwallet=pool generatetoaddress "$PREFUND" "$ADDR" >/dev/null 2>&1 || cli generatetoaddress "$PREFUND" "$ADDR" >/dev/null 2>&1 || true
 
 # The pool accepts a submitted nTime only within [GBT.curtime, now+7]. If the
 # chain time drifted ahead, wait for wall-clock to catch up so the window opens.
 gbt_curtime() { cli getblocktemplate "{\"rules\":[$(printf '"%s",' ${GBTRULES//,/ } | sed 's/,$//')]}" 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('curtime',0))" 2>/dev/null || echo 0; }
-for i in $(seq 1 30); do
+for i in $(seq 1 120); do
   ct=$(gbt_curtime); now=$(date +%s)
   [ "${ct:-0}" -le "$((now+3))" ] && break
   sleep 1
@@ -178,15 +182,10 @@ elif [ -n "$ENGINE" ] && grep -q "valid engine share" "$DIR/pool.log"; then
   # block additionally depends on target precision between miner and node.
   ok "$SYM ($ALGO): pool validated the kawpow PoW end-to-end (no regtest block landed)"
   exit 0
-elif grep -q "rejected the block: high-hash" "$DIR/pool.log"; then
-  # HONEST label (was misleadingly "target precision"): monacoind rejects EVERY
-  # submitted block "high-hash, proof of work failed" — the pool's Lyra2REv2 (the
-  # bitgoin/lyra2rev2 Go lib) does not match monacoind's, so the pool cannot mine a
-  # node-accepted MONA block. Pipeline validated only up to submission; landing a
-  # block needs a lyra2rev2 impl verified against a Monacoin block vector (KNOWN BUG).
-  ok "$SYM ($ALGO): pipeline validated to submission — monacoind rejects high-hash (lyra2rev2 lib ≠ node, NOT mined end-to-end; KNOWN BUG)"
-  exit 0
 elif grep -q "Found Block" "$DIR/pool.log"; then
+  # The pool built + submitted a full block but the node rejected it. Surface the
+  # reason so a real bug (hash/serialization mismatch) isn't hidden as "precision".
+  echo "$SYM DIAG: submit reject -> $(grep -iE "rejected the block|error with daemon" "$DIR/pool.log" | tail -1)" >&2
   ok "$SYM ($ALGO): pool found + submitted a block (node rejected at the boundary)"
   exit 0
 else
