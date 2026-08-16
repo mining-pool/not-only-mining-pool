@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -17,13 +18,26 @@ var log = logging.Logger("storage")
 
 // pplnsLogCap bounds the PPLNS share log (a ZSet of recent shares) so it can
 // never grow without limit; the oldest entries are trimmed as new ones arrive.
-const pplnsLogCap = 200000
+// Atomic so tests can shrink it without racing the writer goroutine. NOTE: this
+// rank cap is applied only outside PPS mode — see putShareNow — because it would
+// otherwise drop shares the PPS cursor hasn't credited yet (underpayment). In PPS
+// the log is trimmed by the cursor instead (ApplyPayments), retaining exactly the
+// uncredited shares.
+var pplnsLogCap atomic.Int64
+
+func init() { pplnsLogCap.Store(200000) }
 
 type DB struct {
 	*redis.Client
-	coin   string
-	shares chan shareJob
+	coin    string
+	shares  chan shareJob
+	ppsMode bool // pps retains uncredited shares (trimmed by cursor, not by rank)
 }
+
+// SetPPSMode switches the PPLNS-log retention policy: in PPS mode the log is not
+// rank-capped (that could drop uncredited shares); it is trimmed by the payout
+// cursor instead. Set once at startup, before shares flow.
+func (s *DB) SetPPSMode(pps bool) { s.ppsMode = pps }
 
 type shareJob struct {
 	share    *types.Share
@@ -88,7 +102,12 @@ func (s *DB) putShareNow(share *types.Share, accepted bool) {
 			Score:  float64(seq),
 			Member: share.Miner + ":" + strconv.FormatFloat(share.Diff, 'f', -1, 64) + ":" + strconv.FormatInt(seq, 10),
 		})
-		ppl.ZRemRangeByRank(ctx, s.coin+":shares:pplnslog", 0, -(pplnsLogCap + 1))
+		// Rank-cap the log so it can't grow unbounded — but ONLY outside PPS mode.
+		// In PPS the log is trimmed by the payout cursor (ApplyPayments), so a burst
+		// of >pplnsLogCap shares between runs never drops uncredited ones.
+		if !s.ppsMode {
+			ppl.ZRemRangeByRank(ctx, s.coin+":shares:pplnslog", 0, -(pplnsLogCap.Load() + 1))
+		}
 		// current-round contribution, sealed to shares:round<height> on a block.
 		ppl.HIncrByFloat(ctx, s.coin+":shares:roundCurrent", share.Miner, share.Diff)
 		ppl.HIncrBy(ctx, s.coin+":miners:validShares", share.Miner, 1)
@@ -284,6 +303,9 @@ func (s *DB) ApplyPayments(u *PaymentUpdate) error {
 	}
 	if u.PPSCursor > 0 {
 		ppl.Set(ctx, s.coin+":pps:cursor", u.PPSCursor, 0)
+		// Shares up to the cursor are now credited — drop them so the PPS log stays
+		// bounded by the uncredited tail instead of the (skipped) rank cap.
+		ppl.ZRemRangeByScore(ctx, s.coin+":shares:pplnslog", "0", strconv.FormatInt(u.PPSCursor, 10))
 	}
 	// This run's intent is now realized — drop it in the same atomic commit so a
 	// resumed run can't re-apply it.

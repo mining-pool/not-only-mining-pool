@@ -66,6 +66,9 @@ func (pm *PaymentManager) Init() error {
 	if err := pm.validatePoolAddress(); err != nil {
 		return err
 	}
+	// In PPS the share log must retain uncredited shares (trimmed by the cursor,
+	// not rank-capped), or a burst between runs would drop unpaid work.
+	pm.db.SetPPSMode(pm.options.PayMode == config.PayModePPS)
 	return pm.setMagnitude()
 }
 
