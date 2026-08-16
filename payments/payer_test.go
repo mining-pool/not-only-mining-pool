@@ -26,6 +26,7 @@ type fakeWallet struct {
 	balance  string // raw getbalance result
 	sendmany func(dummyPresent bool, amounts map[string]float64) (string, *daemons.JsonRpcError)
 	gettx    func(txid string) (*daemons.GetTransaction, *daemons.JsonRpcError)
+	getblk   func(hash string) (confirmations int64, err *daemons.JsonRpcError) // getblock; nil = block not found
 
 	SentBatches []map[string]float64 // captured sendmany calls
 	AddrMethod  string               // captured address-check method actually called
@@ -63,6 +64,17 @@ func (w *fakeWallet) handler(rw http.ResponseWriter, r *http.Request) {
 	case "gettransaction":
 		gt, e := w.gettx(req.Params[0].(string))
 		result, rpcErr = gt, e
+	case "getblock":
+		if w.getblk == nil { // default: node doesn't have the block → orphan
+			rpcErr = &daemons.JsonRpcError{Code: -5, Message: "Block not found"}
+			break
+		}
+		conf, e := w.getblk(req.Params[0].(string))
+		if e != nil {
+			rpcErr = e
+			break
+		}
+		result = map[string]interface{}{"hash": req.Params[0], "confirmations": conf}
 	case "sendmany":
 		dummyPresent := false
 		var amounts map[string]float64
@@ -347,6 +359,56 @@ func TestPayout_OrphanNotPaid(t *testing.T) {
 	}
 	if h.mr.Exists("TEST:shares:round102") {
 		t.Error("orphaned round shares should be cleared")
+	}
+}
+
+// A -5 (wallet doesn't know the coinbase) must NOT orphan a block that is still
+// on-chain — a resyncing wallet is transient; leave it pending and retry.
+func TestPayout_MissingTxButOnChainStaysPending(t *testing.T) {
+	h := newHarness(t, &config.PaymentOptions{MinPayment: 0, MinConfirmations: 100})
+	_ = h.pm.Init()
+	h.seedRound(102, "tx102", map[string]float64{"minerA": 100})
+	h.wallet.gettx = func(string) (*daemons.GetTransaction, *daemons.JsonRpcError) {
+		return nil, &daemons.JsonRpcError{Code: -5, Message: "Invalid or non-wallet transaction id"}
+	}
+	h.wallet.getblk = func(string) (int64, *daemons.JsonRpcError) { return 30, nil } // block is on-chain
+	h.wallet.sendmany = func(bool, map[string]float64) (string, *daemons.JsonRpcError) {
+		t.Fatal("must not pay")
+		return "", nil
+	}
+	if err := h.pm.processPayments(); err != nil {
+		t.Fatal(err)
+	}
+	pb := (&storage.PendingBlock{Hash: "blk102", TxHash: "tx102", Height: 102}).String()
+	if ok, _ := h.mr.SIsMember("TEST:blocks:orphaned", pb); ok {
+		t.Error("on-chain block must NOT be orphaned on a transient wallet -5")
+	}
+	if ok, _ := h.mr.SIsMember("TEST:blocks:pending", pb); !ok {
+		t.Error("block should remain pending for retry")
+	}
+	if !h.mr.Exists("TEST:shares:round102") {
+		t.Error("round shares must be preserved while the block is pending")
+	}
+}
+
+// A reorged coinbase (negative confirmations from gettransaction) is orphaned.
+func TestPayout_ReorgedCoinbaseOrphaned(t *testing.T) {
+	h := newHarness(t, &config.PaymentOptions{MinPayment: 0, MinConfirmations: 100})
+	_ = h.pm.Init()
+	h.seedRound(102, "tx102", map[string]float64{"minerA": 100})
+	h.wallet.gettx = func(string) (*daemons.GetTransaction, *daemons.JsonRpcError) {
+		return &daemons.GetTransaction{Amount: 50, Confirmations: -3, Generated: true}, nil
+	}
+	h.wallet.sendmany = func(bool, map[string]float64) (string, *daemons.JsonRpcError) {
+		t.Fatal("must not pay a reorged block")
+		return "", nil
+	}
+	if err := h.pm.processPayments(); err != nil {
+		t.Fatal(err)
+	}
+	pb := (&storage.PendingBlock{Hash: "blk102", TxHash: "tx102", Height: 102}).String()
+	if ok, _ := h.mr.SIsMember("TEST:blocks:orphaned", pb); !ok {
+		t.Error("reorged (conflicted) block must be orphaned")
 	}
 }
 

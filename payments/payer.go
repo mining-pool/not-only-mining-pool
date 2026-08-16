@@ -394,8 +394,11 @@ func (pm *PaymentManager) classifyBlock(pb *storage.PendingBlock) (reward float6
 		return 0, "", 0, false
 	}
 	if result.Error != nil {
-		if result.Error.Code == -5 { // tx not in wallet: the block never made it in
-			return 0, string(storage.Orphan), 0, true
+		if result.Error.Code == -5 { // wallet doesn't know the coinbase tx
+			// Don't orphan on a bare -5: a syncing/rescanning payment wallet can
+			// transiently miss a valid block's tx. Confirm the block is really
+			// off-chain before orphaning it (irreversible).
+			return pm.classifyMissingTx(pb)
 		}
 		log.Warnf("gettransaction %s: %s", pb.TxHash, result.Error.Message)
 		return 0, "", 0, false
@@ -405,6 +408,11 @@ func (pm *PaymentManager) classifyBlock(pb *storage.PendingBlock) (reward float6
 	if err != nil {
 		log.Error(err)
 		return 0, "", 0, false
+	}
+	// A reorged coinbase stays in the wallet but goes conflicted (negative
+	// confirmations); orphan it so its round is released.
+	if gt.Confirmations < 0 {
+		return 0, string(storage.Orphan), 0, true
 	}
 
 	// find the detail crediting the pool address (the coinbase output).
@@ -418,6 +426,33 @@ func (pm *PaymentManager) classifyBlock(pb *storage.PendingBlock) (reward float6
 		}
 	}
 	return reward, category, int64(gt.Confirmations), true
+}
+
+// classifyMissingTx decides orphan vs transient miss when the wallet doesn't know
+// a pending block's coinbase tx: it checks whether the block itself is on-chain,
+// so a resyncing wallet doesn't cause a valid block to be orphaned.
+func (pm *PaymentManager) classifyMissingTx(pb *storage.PendingBlock) (reward float64, category string, confirmations int64, ok bool) {
+	_, result := pm.cmd("getblock", []interface{}{pb.Hash})
+	if result == nil {
+		return 0, "", 0, false // transient RPC — retry, don't orphan
+	}
+	if result.Error != nil {
+		// the node doesn't have this block at all — it genuinely never made it in.
+		return 0, string(storage.Orphan), 0, true
+	}
+	var gb struct {
+		Confirmations int64 `json:"confirmations"`
+	}
+	if err := json.Unmarshal(result.Result, &gb); err != nil {
+		return 0, "", 0, false
+	}
+	if gb.Confirmations < 0 {
+		return 0, string(storage.Orphan), 0, true // block is on a side chain — orphaned
+	}
+	// On the main chain but the wallet doesn't know its coinbase yet (syncing /
+	// rescanning, or the wallet doesn't own the pool address). Retry, don't orphan.
+	log.Warnf("block %s is on-chain but its coinbase %s is not in the payment wallet; leaving pending (is the wallet synced and owning the pool address?)", pb.Hash, pb.TxHash)
+	return 0, "", 0, false
 }
 
 // settle computes each worker's payout and, if anything is owed, persists a
