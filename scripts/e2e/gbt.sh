@@ -179,13 +179,12 @@ elif [ -n "$ENGINE" ] && grep -q "valid engine share" "$DIR/pool.log"; then
   ok "$SYM ($ALGO): pool validated the kawpow PoW end-to-end (no regtest block landed)"
   exit 0
 elif grep -q "Found Block" "$DIR/pool.log"; then
-  # The pool assembled and submitted a full block (its PoW check passed) but the
-  # node rejected it. Surface WHY so a real bug (hash/serialization mismatch)
-  # isn't hidden behind "target precision".
-  echo "$SYM DIAG: pool submit reject -> $(grep -iE "rejected the block|error with daemon" "$DIR/pool.log" | tail -1)" >&2
-  echo "$SYM DIAG: node debug.log -> $(grep -iE "ERROR|reject|high-hash|bad-txnmrklroot|bad-|proof of work|CheckProofOfWork|CheckBlock" "$DIR"/regtest/debug.log 2>/dev/null | tail -4)" >&2
-  ok "$SYM ($ALGO): pool found + submitted a block (node rejected at the target boundary)"
-  exit 0
+  # TEMP DIAGNOSTIC: fail so run-all dumps the reject reason (record() drops
+  # non-✅ lines when a leg passes). Restore the ok-fallback after diagnosis.
+  fail "$SYM ($ALGO): DIAG pool found+submitted a block but node rejected it"
+  echo "pool submit reject -> $(grep -iE "rejected the block|error with daemon" "$DIR/pool.log" | tail -2)"
+  echo "node debug.log -> $(grep -iE "ERROR|reject|high-hash|bad-txnmrklroot|bad-|proof of work|CheckProofOfWork|CheckBlock" "$DIR"/regtest/debug.log 2>/dev/null | tail -6)"
+  exit 1
 else
   fail "$SYM ($ALGO): no block (height $H0 -> $H1)"
   grep -iE "found block|rejected|invalid|low diff|engine share|candidate" "$DIR/pool.log" | tail -5
