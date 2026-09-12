@@ -5,7 +5,8 @@ A standalone, high-performance Stratum mining-pool server written in Go.
 It started as a pool for **Bitcoin Core (`bitcoind`) variants** — any coin whose
 proof-of-work is a hash of the standard 80-byte block header — and now also ships
 **pluggable mining engines** for coins with entirely different mining models
-(Ethash, RandomX, KawPow, kHeavyHash, Equihash, Autolykos2, BeamHash III, Blake3).
+(Ethash, RandomX, KawPow, kHeavyHash, Equihash, Autolykos2, BeamHash III, Blake3,
+Poseidon2).
 
 > Docs: [Tutorial](TUTORIAL.md) · [Pluggable engines](docs/PLUGGABLE_ENGINES.md) ·
 > [End-to-end testing](docs/E2E.md)
@@ -33,7 +34,7 @@ Built-in algorithms: `sha256`, `sha256d`, `scrypt`, `x11`, `keccak`, `groestl`,
 `algorithm.RegisterHash` — see the [tutorial](TUTORIAL_zh.md). Ready-to-use coin
 templates live in [`coins/`](coins/).
 
-### Pluggable engines (opt-in via build tags)
+### Pluggable engines
 
 For coins whose block structure, PoW verification and Stratum dialect differ from
 Bitcoin, a pluggable `engine.Engine` reuses everything except node interaction
@@ -73,7 +74,7 @@ Copy `config.example.json` to `config.json`, edit the `daemons`, `poolAddress`,
 `ports` and `storage` (Redis) sections, then:
 
 ```bash
-./not-only-mining-pool -c config.json
+./nomp -c config.json
 ```
 
 Engine coins add an `"engine"` field (e.g. `"engine": "ethash"`); GBT coins omit
@@ -83,6 +84,24 @@ For Quantus, see the [configuration and miner instructions](engine/quantus/READM
 It supports the official miner and SRBMiner-Multi through native QUIC and
 LuckyPool Quantus Stratum over TCP/TLS.
 
+### Quantus mining and payments
+
+Start with [`config.quantus.example.json`](engine/quantus/config.quantus.example.json).
+Configure the node's miner endpoint, authentication token and certificate pin,
+the pool's TLS certificate, and Redis. Mining is included in the default Go build;
+ports use fixed integer share difficulty.
+
+Optional **PROP/SOLO payments** settle finalized mining rewards in exact base
+units (1 QTC = 10^12 units). Signed transactions are persisted before broadcast,
+and finalized receipts prevent duplicate debits after a restart. `GET /payments`
+exposes balances, pending transaction hashes and finalized receipts.
+
+Payments require the [signing bridge setup](engine/quantus/README.md#自动支付)
+(Node.js 20+, Rust and the official Quantus signing library), a dedicated funded
+hot wallet, and Redis with `appendonly yes` and `appendfsync always`.
+Wormhole mining rewards must still be collected with the official Quantus CLI;
+automatic wormhole collection and Quantus PPS/PPLNS are not implemented.
+
 ## Testing
 
 - **Unit tests** (hermetic): `go test -short ./...`, and with every engine tag:
@@ -90,11 +109,21 @@ LuckyPool Quantus Stratum over TCP/TLS.
 - **End-to-end** (real nodes, regtest/simnet): a reproducible Docker suite mines a
   real block for every coin. All 10 coins pass in CI. See
   [docs/E2E.md](docs/E2E.md).
+- **Quantus development-chain E2E** (separate local runner): tested with
+  quantus-node 1.0.1 and the official quantus-miner 4.2.0 CPU engine. The run
+  confirmed **128 pool blocks**, paid **1.23 QTC**, and recovered an unconfirmed
+  transaction after a pool crash without a duplicate debit. See the
+  [validation report](docs/QUANTUS_E2E.md). SRBMiner GPU binaries and production
+  throughput have not been tested.
 
 ```bash
 docker build -t nomp-e2e -f scripts/e2e/Dockerfile .
 docker run --rm nomp-e2e            # every coin
 docker run --rm nomp-e2e BTC XMR    # a subset
+
+# Quantus, after installing its signing bridge and node/miner binaries
+python3 scripts/e2e/quantus.py \
+  --node /path/to/quantus-node --miner /path/to/quantus-miner
 ```
 
 ## Continuous integration
@@ -116,10 +145,11 @@ every push and PR:
 | Pluggable engines (architecture + status) | [docs/PLUGGABLE_ENGINES.md](docs/PLUGGABLE_ENGINES.md) | [docs/PLUGGABLE_ENGINES_zh.md](docs/PLUGGABLE_ENGINES_zh.md) |
 | End-to-end testing | [docs/E2E.md](docs/E2E.md) | [docs/E2E_zh.md](docs/E2E_zh.md) |
 
+Quantus: [setup and payment configuration](engine/quantus/README.md) ·
+[development-chain test report](docs/QUANTUS_E2E.md).
+
 ## TODO
 
-- Engine-mode share persistence to Redis (block submission already works; this is
-  for stats/payments — see the TODO in `stratum/engine.go`)
 - More algorithms
 - Web front-end
 
