@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"net"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/mining-pool/not-only-mining-pool/types"
@@ -31,6 +32,8 @@ type Client struct {
 
 	Socket      net.Conn
 	SocketBufIO *bufio.ReadWriter
+	sendMu      sync.Mutex // serialize share replies with concurrent work notifications
+	engineMu    sync.Mutex // session state shared by miner requests and job broadcasts
 
 	LastActivity time.Time
 	Shares       *Shares
@@ -52,6 +55,7 @@ type Client struct {
 	BanningManager    *bans.BanningManager
 	JobManager        *jobs.JobManager
 	SocketClosedEvent chan struct{}
+	closeOnce         sync.Once
 
 	// Engine, when non-nil, switches this client to a pluggable mining engine
 	// (e.g. ethash). The Bitcoin/GBT path is used when Engine is nil.
@@ -90,9 +94,10 @@ func NewStratumClient(subscriptionId []byte, socket net.Conn, options *config.Op
 		SubscriptionBeforeAuth: false,
 		ExtraNonce1:            extraNonce1,
 
-		VarDiff:        varDiff,
-		JobManager:     jm,
-		BanningManager: bm,
+		VarDiff:           varDiff,
+		JobManager:        jm,
+		BanningManager:    bm,
+		SocketClosedEvent: make(chan struct{}),
 	}
 }
 
@@ -109,7 +114,7 @@ func (sc *Client) ShouldBan(shareValid bool) bool {
 				log.Info(strconv.FormatUint(sc.Shares.Invalid, 10) + " out of the last " + strconv.FormatUint(sc.Shares.TotalShares(), 10) + " shares were invalid")
 				sc.BanningManager.AddBannedIP(sc.RemoteAddress.String())
 				log.Warn("closed socket", sc.WorkerName, " due to shares bad percent reached the banning invalid percent threshold")
-				sc.SocketClosedEvent <- struct{}{}
+				sc.closeSocket()
 				_ = sc.Socket.Close()
 				return true
 			}
@@ -125,6 +130,8 @@ func (sc *Client) Init() {
 
 func (sc *Client) HandleMessage(message *daemons.JsonRpcRequest) {
 	if sc.Engine != nil {
+		sc.engineMu.Lock()
+		defer sc.engineMu.Unlock()
 		sc.LastActivity = time.Now()
 		sc.handleEngineMessage(message)
 		return
@@ -224,7 +231,7 @@ func (sc *Client) HandleAuthorize(message *daemons.JsonRpcRequest, replyToSocket
 	if disconnect {
 		log.Warn("closed socket", sc.WorkerName, "due to failed to authorize the miner")
 		_ = sc.Socket.Close()
-		sc.SocketClosedEvent <- struct{}{}
+		sc.closeSocket()
 	}
 
 	// the init Diff for miners
@@ -355,6 +362,8 @@ func (sc *Client) HandleSubmit(message *daemons.JsonRpcRequest) {
 }
 
 func (sc *Client) SendJsonRPC(jsonRPCs daemons.JsonRpc) {
+	sc.sendMu.Lock()
+	defer sc.sendMu.Unlock()
 	raw := jsonRPCs.Json()
 
 	message := make([]byte, 0, len(raw)+1)
@@ -375,11 +384,21 @@ func (sc *Client) SendJsonRPC(jsonRPCs daemons.JsonRpc) {
 func (sc *Client) SendSubscriptionFirstResponse() {
 }
 
+func (sc *Client) closeSocket() {
+	sc.closeOnce.Do(func() {
+		_ = sc.Socket.Close()
+		if sc.SocketClosedEvent != nil {
+			close(sc.SocketClosedEvent)
+		}
+	})
+}
+
 func (sc *Client) SetupSocket() {
 	sc.BanningManager.CheckBan(sc.RemoteAddress.String())
 	once := true
 
 	go func() {
+		defer sc.closeSocket()
 		for {
 			select {
 			case <-sc.SocketClosedEvent:
@@ -388,7 +407,7 @@ func (sc *Client) SetupSocket() {
 				raw, err := sc.SocketBufIO.ReadBytes('\n')
 				if err != nil {
 					if err == io.EOF {
-						sc.SocketClosedEvent <- struct{}{}
+						sc.closeSocket()
 						return
 					}
 					e, ok := err.(net.Error)
@@ -416,7 +435,7 @@ func (sc *Client) SetupSocket() {
 					// socketFlooded
 					log.Warn("Flooding message from", sc.GetLabel(), ":", string(raw))
 					_ = sc.Socket.Close()
-					sc.SocketClosedEvent <- struct{}{}
+					sc.closeSocket()
 					return
 				}
 
@@ -430,7 +449,7 @@ func (sc *Client) SetupSocket() {
 					if !sc.Options.TCPProxyProtocol {
 						log.Error("Malformed message from", sc.GetLabel(), ":", string(raw))
 						_ = sc.Socket.Close()
-						sc.SocketClosedEvent <- struct{}{}
+						sc.closeSocket()
 					}
 
 					return
@@ -501,7 +520,7 @@ func (sc *Client) SendMiningJob(jobParams []interface{}) {
 	if lastActivityAgo > time.Duration(sc.Options.ConnectionTimeout)*time.Second {
 		log.Info("closed socket", sc.WorkerName, "due to activity timeout")
 		_ = sc.Socket.Close()
-		sc.SocketClosedEvent <- struct{}{}
+		sc.closeSocket()
 		return
 	}
 

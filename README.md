@@ -47,6 +47,7 @@ Bitcoin, a pluggable `engine.Engine` reuses everything except node interaction
 | `ergo` | Ergo (Autolykos2) | *(default)* | pure Go (powkit + REST) |
 | `beam` | Beam (BeamHash III) | *(default)* | pure Go; TLS-JSON client transport |
 | `alephium` | Alephium (Blake3) | *(default)* | pure Go; binary protocol, multi-chain |
+| `quantus` | Quantus (QTC / Poseidon2) | *(default)* | QUIC + LuckyPool TCP/TLS; fixed difficulty; finalized PROP/SOLO payouts |
 | `ethash` | Ethereum Classic … | `-tags ethash` | go-etchash + go-ethereum |
 | `randomx` | Monero (CryptoNote) | `-tags randomx` | cgo; prebuilt lib in go-randomx |
 | `kaspa` | Kaspa (kHeavyHash) | `-tags kaspa` | kaspad gRPC + consensus |
@@ -77,6 +78,10 @@ Copy `config.example.json` to `config.json`, edit the `daemons`, `poolAddress`,
 
 Engine coins add an `"engine"` field (e.g. `"engine": "ethash"`); GBT coins omit
 it (or use `"gbt"`). Per-engine example configs live under `engine/<name>/`.
+
+For Quantus, see the [configuration and miner instructions](engine/quantus/README.md).
+It supports the official miner and SRBMiner-Multi through native QUIC and
+LuckyPool Quantus Stratum over TCP/TLS.
 
 ## Testing
 

@@ -48,6 +48,17 @@ as the reference implementation.
 
 ## Engine status
 
+### Quantus — QTC (`engine/quantus/`, default build)
+
+Native QUIC (`quantus-miner/2`) connects to the node with token authentication
+and certificate pinning. Miner ports select QUIC or LuckyPool Quantus Stratum
+over TCP/TLS, supporting the official miner and SRBMiner-Multi concurrently.
+Pure Go Poseidon2 verifies 512-bit nonces and strict U512 targets. The per-port
+dialects reuse shared clients and accounting, with per-session Stratum nonce
+prefixes. Uses fixed integer share difficulty. PROP/SOLO payouts use finalized
+chain events and an independently funded signing wallet. See
+[setup, protocol and validation limits](../engine/quantus/README.md).
+
 Every engine below is **end-to-end validated on a real node** in CI — see
 [E2E.md](E2E.md). "Pure Go" engines are in the default build; heavy ones are behind
 build tags so the default binary stays lean.

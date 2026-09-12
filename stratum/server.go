@@ -55,13 +55,18 @@ func NewStratumServer(options *config.Options, jm *jobs.JobManager, bm *bans.Ban
 }
 
 func (ss *Server) Init() (portStarted []int) {
+	var listeners []net.Listener
 	if ss.Options.Banning != nil {
 		ss.BanningManager.Init()
 	}
 
 	for port, options := range ss.Options.Ports {
 		var err error
-		if options.TLS != nil {
+		if provider, ok := ss.Engine.(interface {
+			Listen(int, *config.PortOptions) (net.Listener, error)
+		}); ok {
+			ss.Listener, err = provider.Listen(port, options)
+		} else if options.TLS != nil {
 			ss.Listener, err = tls.Listen("tcp", ":"+strconv.Itoa(port), options.TLS.ToTLSConfig())
 		} else {
 			ss.Listener, err = net.Listen("tcp", ":"+strconv.Itoa(port))
@@ -73,6 +78,7 @@ func (ss *Server) Init() (portStarted []int) {
 		}
 
 		portStarted = append(portStarted, port)
+		listeners = append(listeners, ss.Listener)
 		//if len(portStarted) == len(ss.Options.Ports) {
 		//	// emit started
 		//}
@@ -110,20 +116,22 @@ func (ss *Server) Init() (portStarted []int) {
 		}()
 	}
 
-	go func() {
-		for {
-			conn, err := ss.Listener.Accept()
-			if err != nil {
-				log.Error(err)
-				continue
-			}
+	for _, listener := range listeners {
+		go func(listener net.Listener) {
+			for {
+				conn, err := listener.Accept()
+				if err != nil {
+					log.Error(err)
+					return
+				}
 
-			if conn != nil {
-				log.Info("new conn from ", conn.RemoteAddr().String())
-				go ss.HandleNewClient(conn)
+				if conn != nil {
+					log.Info("new conn from ", conn.RemoteAddr().String())
+					go ss.HandleNewClient(conn)
+				}
 			}
-		}
-	}()
+		}(listener)
+	}
 
 	return portStarted
 }
@@ -133,6 +141,12 @@ func (ss *Server) HandleNewClient(socket net.Conn) []byte {
 	subscriptionID := ss.SubscriptionCounter.Next()
 	client := NewStratumClient(subscriptionID, socket, ss.Options, ss.JobManager, ss.BanningManager)
 	client.Engine = ss.Engine
+	if provider, ok := ss.Engine.(interface {
+		ClientEngine(int, *config.PortOptions) engine.Engine
+	}); ok {
+		port := socket.LocalAddr().(*net.TCPAddr).Port
+		client.Engine = provider.ClientEngine(port, ss.Options.Ports[port])
+	}
 	client.DB = ss.DB
 	ss.clientsMu.Lock()
 	ss.StratumClients[binary.LittleEndian.Uint64(subscriptionID)] = client
@@ -140,12 +154,9 @@ func (ss *Server) HandleNewClient(socket net.Conn) []byte {
 	// client.connected
 
 	go func() {
-		for {
-			<-client.SocketClosedEvent
-			log.Warn("a client socket closed")
-			ss.RemoveStratumClientBySubscriptionId(subscriptionID)
-			// client.disconnected
-		}
+		<-client.SocketClosedEvent
+		log.Warn("a client socket closed")
+		ss.RemoveStratumClientBySubscriptionId(subscriptionID)
 	}()
 
 	client.Init()
@@ -184,9 +195,7 @@ func (ss *Server) BroadcastCurrentMiningJob(jobParams []interface{}) {
 func (ss *Server) BroadcastEngineWork() {
 	log.Info("broadcasting engine work")
 	for _, c := range ss.snapshotClients() {
-		if c.IsAuthorized {
-			c.sendEngineWork()
-		}
+		c.broadcastEngineWork()
 	}
 }
 

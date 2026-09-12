@@ -11,7 +11,8 @@ type Options struct {
 	// Engine selects the mining-model engine. Empty or "gbt" (default) is the
 	// built-in Bitcoin getblocktemplate flow. Other values (e.g. "ethash") name
 	// a pluggable engine.Engine — see docs/PLUGGABLE_ENGINES_zh.md.
-	Engine string `json:"engine"`
+	Engine  string          `json:"engine"`
+	Quantus *QuantusOptions `json:"quantus,omitempty"`
 
 	PoolAddress      *Recipient   `json:"poolAddress"`
 	RewardRecipients []*Recipient `json:"rewardRecipients"`

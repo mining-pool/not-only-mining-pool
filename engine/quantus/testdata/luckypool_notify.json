@@ -1,0 +1,16 @@
+{
+  "jsonrpc": "2.0",
+  "method": "job",
+  "params": {
+    "clean_jobs": true,
+    "job": {
+      "algo": "qpow-poseidon2",
+      "difficulty": 10000000000,
+      "extranonce": "0004f005",
+      "job_id": "22768-10000000000",
+      "mining_hash": "d8797e03ff633526267709d6d2f2e32652cf03c57a429e7ca90017a7d1ee0c8f",
+      "seq": 22768,
+      "target": "000000006df37f675ef6eadf5ab9a2072d44268d97df837e6748956e5c6c2117501e68855669e4b8356cf292464d9e16cc8d4655f8fb96f429b149fc87d74da4"
+    }
+  }
+}

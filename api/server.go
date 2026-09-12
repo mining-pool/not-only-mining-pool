@@ -66,6 +66,20 @@ func (s *Server) RegisterFunc(path string, fn func(http.ResponseWriter, *http.Re
 	s.availablePaths = append(s.availablePaths, path)
 }
 
+// RegisterPaymentStatus allows non-Bitcoin engines to expose exact-unit balances
+// and finalized receipts without serializing wallet configuration or signed bytes.
+func (s *Server) RegisterPaymentStatus(status func() (interface{}, error)) {
+	s.RegisterFunc("/payments", func(w http.ResponseWriter, r *http.Request) {
+		v, err := status()
+		if err != nil {
+			http.Error(w, "payment status unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(v)
+	})
+}
+
 func (s *Server) Serve() {
 	addr := s.apiConf.Addr()
 	log.Warn("API server listening on ", addr)

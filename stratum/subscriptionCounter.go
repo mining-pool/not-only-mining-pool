@@ -3,10 +3,12 @@ package stratum
 import (
 	"encoding/binary"
 	"math"
+	"sync"
 )
 
 // support 18446744073709551615 max conn
 type SubscriptionCounter struct {
+	mu      sync.Mutex
 	Count   uint64
 	Padding []byte
 }
@@ -19,6 +21,8 @@ func NewSubscriptionCounter() *SubscriptionCounter {
 }
 
 func (sc *SubscriptionCounter) Next() []byte {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
 	sc.Count++
 	if sc.Count == math.MaxUint64 {
 		sc.Count = 0
