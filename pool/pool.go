@@ -44,6 +44,7 @@ type Pool struct {
 	ProtocolVersion            int
 	APIServer                  *api.Server
 	PaymentManager             *payments.PaymentManager
+	EnginePayments             interface{ ServePayments() }
 
 	// Engine is set for non-GBT mining models (e.g. ethash). When set, Init
 	// skips the entire Bitcoin daemon/jobmanager/payments machinery.
@@ -72,15 +73,27 @@ func NewEnginePool(options *config.Options) *Pool {
 	ss.Engine = eng
 	ss.DB = db // engine-mode share persistence (stats/accounting)
 
-	// Payout is available to bitcoin-family engine coins (e.g. Ravencoin/kawpow),
-	// whose shares carry a coinbase txid the payment processor can attribute.
-	// Non-bitcoin engines leave payments disabled; enabling one there fails fast
-	// in PaymentManager.Init when the wallet RPCs are unavailable.
+	// Engines can supply their own payment processor. Bitcoin-family engines
+	// otherwise use the coinbase transaction and wallet RPC payment path.
 	var dm *daemons.DaemonManager
 	var pm *payments.PaymentManager
+	var ep interface{ ServePayments() }
 	if !options.DisablePayment && options.PaymentOptions != nil {
-		dm = daemons.NewDaemonManager(options.Daemons, options.Coin)
-		pm = payments.NewPaymentManager(options.PaymentOptions, options.PoolAddress, dm, db)
+		if custom, ok := eng.(interface {
+			InitPayments(*config.Options, *storage.DB) error
+			ServePayments()
+		}); ok {
+			if err := custom.InitPayments(options, db); err != nil {
+				log.Fatal("engine payments init failed: ", err)
+			}
+			ep = custom
+			if status, ok := eng.(interface{ PaymentStatus() (interface{}, error) }); ok {
+				apiServer.RegisterPaymentStatus(status.PaymentStatus)
+			}
+		} else {
+			dm = daemons.NewDaemonManager(options.Daemons, options.Coin)
+			pm = payments.NewPaymentManager(options.PaymentOptions, options.PoolAddress, dm, db)
+		}
 	}
 
 	return &Pool{
@@ -90,6 +103,7 @@ func NewEnginePool(options *config.Options) *Pool {
 		StratumServer:  ss,
 		DaemonManager:  dm,
 		PaymentManager: pm,
+		EnginePayments: ep,
 		Stats:          NewStats(),
 	}
 }
@@ -206,6 +220,10 @@ func (p *Pool) Init() {
 // cannot be validated (e.g. payments enabled on a non-bitcoin-family coin).
 func (p *Pool) startPaymentsIfEnabled() {
 	if p.Options.DisablePayment || p.Options.PaymentOptions == nil {
+		return
+	}
+	if p.EnginePayments != nil {
+		go p.EnginePayments.ServePayments()
 		return
 	}
 	if err := p.PaymentManager.Init(); err != nil {

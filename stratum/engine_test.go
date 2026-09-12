@@ -7,11 +7,13 @@ import (
 	"math/big"
 	"net"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
 
+	"github.com/mining-pool/not-only-mining-pool/bans"
 	"github.com/mining-pool/not-only-mining-pool/config"
 	"github.com/mining-pool/not-only-mining-pool/daemons"
 	"github.com/mining-pool/not-only-mining-pool/engine"
@@ -43,9 +45,9 @@ type fakeEngine struct {
 	height    int64
 }
 
-func (f *fakeEngine) Name() string                     { return "fake" }
-func (f *fakeEngine) Init(_ *config.Options) error     { return nil }
-func (f *fakeEngine) Watch(_ func()) error            { select {} }
+func (f *fakeEngine) Name() string                 { return "fake" }
+func (f *fakeEngine) Init(_ *config.Options) error { return nil }
+func (f *fakeEngine) Watch(_ func()) error         { select {} }
 func (f *fakeEngine) OnSubscribe(_ engine.Session, _ []interface{}) (interface{}, []byte, int) {
 	return true, nil, 0
 }
@@ -447,4 +449,63 @@ func TestEngineVarDiffBoundaryTolerance(t *testing.T) {
 	if len(msgs) != 1 || msgs[0]["result"] != false || msgs[0]["error"] == nil {
 		t.Fatalf("share below both difficulties should be rejected: %v", msgs)
 	}
+}
+
+// A QUIC upstream reconnect closes native miner sessions. The shared lifecycle
+// must release each session once, including non-EOF transport failures.
+func TestEngineClientDisconnectCleanup(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	miner, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer miner.Close()
+	socket, err := listener.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer socket.Close()
+	port := socket.LocalAddr().(*net.TCPAddr).Port
+	opts := &config.Options{Ports: map[int]*config.PortOptions{port: {Diff: 1}}, Banning: &config.BanningOptions{}}
+	server := NewStratumServer(opts, nil, bans.NewBanningManager(opts.Banning))
+	server.Engine = &fakeEngine{}
+	server.HandleNewClient(socket)
+	clients := server.snapshotClients()
+	if len(clients) != 1 {
+		t.Fatal("missing client")
+	}
+	miner.Close()
+	limit := time.Now().Add(time.Second)
+	for len(server.snapshotClients()) != 0 && time.Now().Before(limit) {
+		time.Sleep(time.Millisecond)
+	}
+	if len(server.snapshotClients()) != 0 {
+		t.Fatal("disconnected client retained")
+	}
+	// Closing again must neither block nor panic.
+	clients[0].closeSocket()
+}
+
+// Node job pushes can arrive while a miner logs in or changes session state.
+func TestEngineConcurrentLoginBroadcast(t *testing.T) {
+	sc, _ := newEngineTestClient(&fakeEngine{})
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			sc.HandleMessage(req("eth_submitLogin", "account.rig"))
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			sc.broadcastEngineWork()
+		}
+	}()
+	wg.Wait()
 }

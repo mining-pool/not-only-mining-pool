@@ -49,9 +49,23 @@ func (s engineSession) Send(method string, params []interface{}) error {
 	} else {
 		raw = daemons.MarshalParams(params...)
 	}
+	if versioned, ok := s.sc.Engine.(interface{ NotificationVersion() string }); ok {
+		s.sc.SendJsonRPC(&engineNotification{JSONRPC: versioned.NotificationVersion(), Method: method, Params: raw})
+		return nil
+	}
 	s.sc.SendJsonRPC(&daemons.JsonRpcRequest{Id: nil, Method: method, Params: raw})
 	return nil
 }
+
+// Some dialects require JSON-RPC 2.0 notifications with no id field.
+type engineNotification struct {
+	JSONRPC string          `json:"jsonrpc"`
+	Method  string          `json:"method"`
+	Params  json.RawMessage `json:"params"`
+}
+
+func (*engineNotification) GetJsonRpcId() int64 { return 0 }
+func (n *engineNotification) Json() []byte      { b, _ := json.Marshal(n); return b }
 
 // diffJobber is an optional engine capability: build the work package for a
 // specific share difficulty (ethash-style engines put the target inside the
@@ -59,6 +73,11 @@ func (s engineSession) Send(method string, params []interface{}) error {
 // the global JobNotification.
 type diffJobber interface {
 	JobParamsForDifficulty(diff float64) []interface{}
+}
+
+// sessionJobber carries connection-specific fields such as a nonce prefix.
+type sessionJobber interface {
+	JobParamsForSession(engine.Session) []interface{}
 }
 
 // notifyMethoder is an optional engine capability: the JSON-RPC method used to
@@ -110,6 +129,9 @@ func (sc *Client) engineDiff() float64 {
 // engineJobParams returns the work package to hand this client, using the
 // per-connection difficulty when the engine supports it.
 func (sc *Client) engineJobParams() []interface{} {
+	if ej, ok := sc.Engine.(sessionJobber); ok {
+		return ej.JobParamsForSession(engineSession{sc})
+	}
 	if ej, ok := sc.Engine.(diffJobber); ok {
 		return ej.JobParamsForDifficulty(sc.engineDiff())
 	}
@@ -135,6 +157,14 @@ func (sc *Client) sendEngineWork() {
 		method = nm.NotifyMethod()
 	}
 	_ = engineSession{sc}.Send(method, params)
+}
+
+func (sc *Client) broadcastEngineWork() {
+	sc.engineMu.Lock()
+	defer sc.engineMu.Unlock()
+	if sc.IsAuthorized {
+		sc.sendEngineWork()
+	}
 }
 
 // handleEngineMessage routes stratum messages to the active engine. It supports
@@ -172,6 +202,12 @@ func (sc *Client) handleEngineMessage(message *daemons.JsonRpcRequest) {
 		// CryptoNote/XMRig: one call does subscribe+authorize and the reply
 		// carries the first job, so no work push follows.
 		params := rawParamsToIface(message.Params)
+		if validator, ok := sc.Engine.(interface{ ValidateLogin([]interface{}) error }); ok {
+			if err := validator.ValidateLogin(params); err != nil {
+				sc.SendJsonRPC(&daemons.JsonRpcResponse{Id: message.Id, Error: &daemons.JsonRpcError{Code: -1, Message: err.Error()}})
+				return
+			}
+		}
 		result, en1, _ := sc.Engine.OnSubscribe(sess, params)
 		if en1 != nil {
 			sc.ExtraNonce1 = en1

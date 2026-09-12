@@ -1,0 +1,19 @@
+{
+  "id": 1,
+  "result": {
+    "extensions": [
+      "keepalive"
+    ],
+    "id": "7577b955-142a-4420-be97-cb3c54e84f4c",
+    "job": {
+      "algo": "qpow-poseidon2",
+      "difficulty": 10000000000,
+      "extranonce": "0004ee45",
+      "job_id": "22729-10000000000",
+      "mining_hash": "415c416d00ae68342369dbc22db3b8f805a1b1a0ea0848cf08116ab894e46753",
+      "seq": 22729,
+      "target": "000000006df37f675ef6eadf5ab9a2072d44268d97df837e6748956e5c6c2117501e68855669e4b8356cf292464d9e16cc8d4655f8fb96f429b149fc87d74da4"
+    },
+    "status": "OK"
+  }
+}

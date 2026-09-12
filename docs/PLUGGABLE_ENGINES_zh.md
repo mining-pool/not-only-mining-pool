@@ -383,3 +383,16 @@ PoW 用 powkit BeamHash III 校验 40 字节头(input‖nonce)+104 字节解，*
 出块 blockBlob = `nonce24‖headerBlob‖txsBlob` 经 `SubmitBlock(0x00)` 回传。
 - 多链：`JobParamsForDifficulty` 一次返回全部链 job 的数组，`OnSubmit` 按 jobId 定位链。
 - 待实机：alephium-node miner API + 支持 ALPH 的矿机；矿机侧 notify 字段顺序需与目标矿机对齐。
+
+## 15. Quantus（QTC / Poseidon2）
+
+默认构建包含 `engine: "quantus"`。节点端使用 `quantus-miner/2` QUIC
+协议；矿池校验节点证书指纹，以节点令牌完成握手。矿工端可同时开启
+QUIC 与 LuckyPool Quantus TCP/TLS 端口，支持官方矿工及 SRBMiner-Multi。
+纯 Go PoW 校验已通过官方 5 组测试向量，原生矿工消息经适配器复用共享
+客户端和 share 记账。每次 share 提交后续发任务，节点断线后清理旧任务并重连。
+
+各端口使用固定整数难度，Stratum 任务保留每个会话的 nonce 前缀。
+支持 PROP / SOLO 自动支付，使用最终确认事件和独立签名钱包；
+成功发送 seal 后仍需等待链上确认。完整配置、矿工命令和验证范围见
+[Quantus 接入说明](../engine/quantus/README.md)。
