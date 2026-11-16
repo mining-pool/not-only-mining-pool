@@ -103,6 +103,11 @@ Copy `config.example.json` to `config.json`, edit the `daemons`, `poolAddress`,
 ./nomp -c config.json
 ```
 
+Most settings can be changed without a restart: edit `config.json` and send
+`SIGHUP` (or use **Reload configuration** in the web portal). Ports, banning,
+fee recipients, payout thresholds and API access apply at once; see
+[configuration reload](docs/API.md#configuration-reload).
+
 Engine coins add an `"engine"` field (e.g. `"engine": "ethash"`); GBT coins omit
 it (or use `"gbt"`). Per-engine example configs live under `engine/<name>/`.
 

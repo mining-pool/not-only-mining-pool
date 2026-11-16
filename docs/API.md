@@ -172,6 +172,7 @@ return 503 while public lookups keep working.
 | `POST /admin-api/auth/login` | JSON `{username,password}`; returns the account, expiry and a CSRF token and sets the session cookie |
 | `GET /admin-api/auth/session` | Current session; 401 when absent or expired |
 | `POST /admin-api/auth/logout` | Checks `X-CSRF-Token`, destroys the session and clears the cookie |
+| `GET` / `POST /admin-api/reload` | Last configuration reload / reload now (POST needs `X-CSRF-Token`), see [Configuration reload](#configuration-reload) |
 | `/admin-api/*` | Pool API behind the session (same paths as `/api/*`, including the full miner index and payout ledger; currently read-only) |
 
 - The session cookie is HttpOnly, Secure over HTTPS, scoped to `/admin-api`.
@@ -184,6 +185,48 @@ return 503 while public lookups keep working.
   concurrent password checks.
 - Authorization is enforced in Go, not by hiding portal routes. New sensitive
   operations must be mounted under `/admin-api/`, never on public routes.
+
+## Configuration reload
+
+The pool re-reads its configuration file without a restart when it receives
+`SIGHUP`, or when an administrator clicks **Reload configuration** in the web
+portal (`POST /admin-api/reload`, which needs the session and CSRF token and
+only re-reads the file on the server — nothing is uploaded).
+
+```bash
+kill -HUP "$(pidof nomp)"
+# systemd: ExecReload=/bin/kill -HUP $MAINPID, then
+systemctl reload nomp
+```
+
+A reload is all-or-nothing. The new file is parsed and validated first —
+certificates are loaded, new ports are bound, the administrator hash and
+reward addresses are checked. If anything fails, or the file changes a setting
+that needs a restart, nothing is applied and the pool keeps running as before.
+The outcome is logged and shown in the portal (`GET /admin-api/reload` returns
+the last result).
+
+| Setting | Applied |
+| --- | --- |
+| `ports`: add a port | Starts listening immediately |
+| `ports`: remove a port | Stops listening and disconnects miners on it (they fail over per their own configuration) |
+| `ports`: `diff`, `varDiff` | New connections; connected miners keep their settings until they reconnect |
+| `ports`: TLS certificate renewed or paths changed | New handshakes; no connection is dropped (also for QUIC) |
+| `ports`: TLS switched on/off, or `protocol` changed | The port is rebound and its connections dropped |
+| `banning` (including enabling/disabling) | Immediately |
+| `connectionTimeout`, `tcpProxyProtocol` | Next check / new connections |
+| `rewardRecipients` | From the next job (GBT coins) |
+| `payment.interval`, `minPayment`, `minConfirmations` | From the next payout run; a run in progress is never changed |
+| `api.allowedOrigins`, `api.hashesPerDifficulty` | Immediately |
+| `api.admin` | Immediately; every administrator session is signed out |
+| `api.tls` certificate renewed or paths changed | New handshakes |
+
+These need a restart and make a reload fail: `coin`, `engine`, `algorithm`,
+`daemons`, `p2p`, `storage`, `poolAddress`, `quantus`, `disablePayment`,
+`blockRefreshInterval`, `jobRebroadcastTimeout`, `emitInvalidBlockHashes`,
+`api.host`, `api.port`, enabling or disabling `api.tls`, and every `payment`
+field other than the three above (the pay mode and accounting parameters stay
+fixed so one ledger never mixes rules).
 
 ## Production deployment
 

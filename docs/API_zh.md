@@ -134,6 +134,7 @@ umask 077
 | `POST /admin-api/auth/login` | JSON `{username,password}`，返回账号、到期时间和 CSRF token，并设置会话 Cookie |
 | `GET /admin-api/auth/session` | 当前会话；未登录或到期返回 401 |
 | `POST /admin-api/auth/logout` | 校验 `X-CSRF-Token` 后销毁会话并清除 Cookie |
+| `GET` / `POST /admin-api/reload` | 上次配置重载结果 / 立即重载（POST 需要 `X-CSRF-Token`），见[配置热重载](#配置热重载) |
 | `/admin-api/*` | 登录后访问的矿池 API（与 `/api/*` 相同的路径，包含完整矿工索引与支付账本，当前只读） |
 
 - 会话 Cookie 为 HttpOnly，HTTPS 下带 Secure，Path 限于 `/admin-api`。重新登录会轮换会话。
@@ -141,6 +142,35 @@ umask 077
 - 登录要求 JSON 与合法 Origin；退出和以后的管理写接口还要求 `X-CSRF-Token`。
 - 登录按连接来源限制为每 5 分钟最多 10 次，并限制并发密码校验。
 - 权限在 Go 端校验，不依赖前端隐藏路由。以后新增敏感运维接口必须挂在 `/admin-api/` 下，不能放进公开路由。
+
+## 配置热重载
+
+矿池收到 `SIGHUP`，或管理员在网页后台点击**重新加载配置**（`POST /admin-api/reload`，需要管理员会话和 CSRF token，只重新读取服务器上的文件，不接受上传内容）时，会在不重启的情况下重新读取配置文件。
+
+```bash
+kill -HUP "$(pidof nomp)"
+# systemd：配置 ExecReload=/bin/kill -HUP $MAINPID 后
+systemctl reload nomp
+```
+
+重载要么全部生效，要么全部不生效。会先解析并校验新文件：加载证书、绑定新端口、检查管理员密码哈希和收款地址。任何一步失败，或文件修改了必须重启的配置，都不会应用任何改动，矿池照常运行。结果会写入日志并显示在网页后台（`GET /admin-api/reload` 返回上次结果）。
+
+| 配置 | 生效方式 |
+| --- | --- |
+| `ports`：新增端口 | 立即开始监听 |
+| `ports`：删除端口 | 停止监听并断开该端口上的矿机（矿机按自身配置切换） |
+| `ports`：`diff`、`varDiff` | 新连接生效；已连接的矿机保持原设置，重连后生效 |
+| `ports`：TLS 证书续期或更换路径 | 新握手生效，不断开任何连接（QUIC 同样） |
+| `ports`：开关 TLS 或修改 `protocol` | 重新绑定端口，该端口上的连接会断开 |
+| `banning`（含开启 / 关闭） | 立即生效 |
+| `connectionTimeout`、`tcpProxyProtocol` | 下次检查 / 新连接生效 |
+| `rewardRecipients` | 下一个挖矿任务开始生效（GBT 币种） |
+| `payment.interval`、`minPayment`、`minConfirmations` | 下一轮结算开始生效，绝不改动进行中的结算 |
+| `api.allowedOrigins`、`api.hashesPerDifficulty` | 立即生效 |
+| `api.admin` | 立即生效，所有管理员会话退出登录 |
+| `api.tls` 证书续期或更换路径 | 新握手生效 |
+
+以下配置必须重启，修改后重载会失败：`coin`、`engine`、`algorithm`、`daemons`、`p2p`、`storage`、`poolAddress`、`quantus`、`disablePayment`、`blockRefreshInterval`、`jobRebroadcastTimeout`、`emitInvalidBlockHashes`、`api.host`、`api.port`、开启或关闭 `api.tls`，以及 `payment` 中除上述三项外的所有字段（结算模式和记账参数保持不变，保证同一账本不会混用规则）。
 
 ## 生产部署
 
