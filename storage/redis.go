@@ -114,21 +114,20 @@ func (s *DB) putShareNow(share *types.Share, accepted bool) {
 
 		ppl.HIncrBy(ctx, s.coin+":pool", "validShares", 1)
 
-		// cost storage for speed, dont use for range to replace this
-		ppl.ZAdd(ctx, s.coin+":pool:shares", &redis.Z{
-			Score:  float64(now),
-			Member: strDiff,
-		})
-
-		ppl.ZAdd(ctx, s.coin+":miner:"+share.Miner+":hashes", &redis.Z{
-			Score:  float64(now),
-			Member: strDiff,
-		})
-
-		ppl.ZAdd(ctx, s.coin+":miner:"+share.Miner+":rig:"+share.Rig+":hashes", &redis.Z{
-			Score:  float64(now),
-			Member: strDiff,
-		})
+		// Work-rate series, scored by unix time. The member carries the share's
+		// sequence number so equal-difficulty shares stay distinct (a bare
+		// difficulty member would collapse them into one). Entries older than
+		// the longest reporting window are trimmed on write.
+		member := strDiff + ":" + strconv.FormatInt(seq, 10)
+		cutoff := strconv.FormatInt(now-rateRetention, 10)
+		for _, key := range []string{
+			s.coin + ":pool:shares",
+			s.coin + ":miner:" + share.Miner + ":hashes",
+			s.coin + ":miner:" + share.Miner + ":rig:" + share.Rig + ":hashes",
+		} {
+			ppl.ZAdd(ctx, key, &redis.Z{Score: float64(now), Member: member})
+			ppl.ZRemRangeByScore(ctx, key, "-inf", "("+cutoff)
+		}
 
 	} else {
 		log.Warn("recording invalid share")
@@ -202,64 +201,48 @@ func (s *DB) GetPoolTotalInvalidBlocks() (uint64, error) {
 	return s.HGet(context.Background(), s.coin+":pool", "invalidBlocks").Uint64()
 }
 
-// GetMinerTotalShares will return the number of all invalid blocks
-func (s *DB) GetRigHashrate(minerName, rigName string, from, to int64) (hashrate float64, err error) {
-	slice, err := s.ZRange(context.Background(), s.coin+":miner:"+minerName+":rig:"+rigName+":hashes", from, to).Result()
+// rateRetention is how long work-rate samples are kept: the longest window
+// reported by the API (24h) plus a margin.
+const rateRetention = 25 * 60 * 60
+
+// rate sums the share difficulty recorded in key with a timestamp in
+// [from, to] and returns it per second.
+func (s *DB) rate(key string, from, to int64) (float64, error) {
+	if to <= from {
+		return 0, nil
+	}
+	members, err := s.ZRangeByScore(context.Background(), key, &redis.ZRangeBy{
+		Min: strconv.FormatInt(from, 10),
+		Max: strconv.FormatInt(to, 10),
+	}).Result()
 	if err != nil {
-		return 0.0, err
+		return 0, err
 	}
-
-	var totalDiff float64
-	for i := range slice {
-		diff, err := strconv.ParseFloat(slice[i], 64)
+	var total float64
+	for _, member := range members {
+		// "<diff>:<seq>"; older entries were a bare "<diff>".
+		diff, err := strconv.ParseFloat(strings.SplitN(member, ":", 2)[0], 64)
 		if err != nil {
-			return 0.0, err
+			return 0, err
 		}
-
-		totalDiff += diff
+		total += diff
 	}
-
-	return totalDiff / float64(to-from), nil
+	return total / float64(to-from), nil
 }
 
-// GetMinerTotalShares will return the number of all invalid blocks
-func (s *DB) GetMinerHashrate(minerName string, from, to int64) (hashrate float64, err error) {
-	slice, err := s.ZRange(context.Background(), s.coin+":miner:"+minerName+":shares", from, to).Result()
-	if err != nil {
-		return 0.0, err
-	}
-
-	var totalDiff float64
-	for i := range slice {
-		diff, err := strconv.ParseFloat(slice[i], 64)
-		if err != nil {
-			return 0.0, err
-		}
-
-		totalDiff += diff
-	}
-
-	return totalDiff / float64(to-from), nil
+// GetRigHashrate returns a rig's accepted share difficulty per second over [from, to].
+func (s *DB) GetRigHashrate(minerName, rigName string, from, to int64) (float64, error) {
+	return s.rate(s.coin+":miner:"+minerName+":rig:"+rigName+":hashes", from, to)
 }
 
-// GetMinerTotalShares will return the number of all invalid blocks
+// GetMinerHashrate returns a miner's accepted share difficulty per second over [from, to].
+func (s *DB) GetMinerHashrate(minerName string, from, to int64) (float64, error) {
+	return s.rate(s.coin+":miner:"+minerName+":hashes", from, to)
+}
+
+// GetPoolHashrate returns the pool's accepted share difficulty per second over [from, to].
 func (s *DB) GetPoolHashrate(from, to int64) (float64, error) {
-	slice, err := s.ZRange(context.Background(), s.coin+":pool:shares", from, to).Result()
-	if err != nil {
-		return 0.0, err
-	}
-
-	var totalDiff float64
-	for i := range slice {
-		diff, err := strconv.ParseFloat(slice[i], 64)
-		if err != nil {
-			return 0.0, err
-		}
-
-		totalDiff += diff
-	}
-
-	return totalDiff / float64(to-from), nil
+	return s.rate(s.coin+":pool:shares", from, to)
 }
 
 // GetCurrentRoundCount will return a total diff of shares the miner submitted
