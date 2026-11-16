@@ -135,6 +135,7 @@ umask 077
 | `GET /admin-api/auth/session` | 当前会话；未登录或到期返回 401 |
 | `POST /admin-api/auth/logout` | 校验 `X-CSRF-Token` 后销毁会话并清除 Cookie |
 | `GET` / `POST /admin-api/reload` | 上次配置重载结果 / 立即重载（POST 需要 `X-CSRF-Token`），见[配置热重载](#配置热重载) |
+| `GET` / `PUT /admin-api/settings` | 读取 / 写入并应用可热修改的配置（PUT 需要 `X-CSRF-Token`），见[通过 API 修改配置](#通过-api-修改配置) |
 | `/admin-api/*` | 登录后访问的矿池 API（与 `/api/*` 相同的路径，包含完整矿工索引与支付账本，当前只读） |
 
 - 会话 Cookie 为 HttpOnly，HTTPS 下带 Secure，Path 限于 `/admin-api`。重新登录会轮换会话。
@@ -145,7 +146,7 @@ umask 077
 
 ## 配置热重载
 
-矿池收到 `SIGHUP`，或管理员在网页后台点击**重新加载配置**（`POST /admin-api/reload`，需要管理员会话和 CSRF token，只重新读取服务器上的文件，不接受上传内容）时，会在不重启的情况下重新读取配置文件。
+矿池收到 `SIGHUP`，或管理员在网页后台点击**重新加载配置**（`POST /admin-api/reload`，需要管理员会话和 CSRF token，重新读取服务器上的文件）时，会在不重启的情况下重新读取配置文件。若想通过 API 直接修改配置而不是编辑文件，见[通过 API 修改配置](#通过-api-修改配置)。
 
 ```bash
 kill -HUP "$(pidof nomp)"
@@ -172,6 +173,32 @@ systemctl reload nomp
 | `api.tls` 证书续期或更换路径 | 新握手生效 |
 
 以下配置必须重启，修改后重载会失败：`coin`、`engine`、`algorithm`、`daemons`、`p2p`、`storage`、`poolAddress`、`quantus` 的其余字段、`disablePayment`、`blockRefreshInterval`、`jobRebroadcastTimeout`、`emitInvalidBlockHashes`、`api.host`、`api.port`、开启或关闭 `api.tls`，以及 `payment` 中除上述三项外的所有字段（结算模式和记账参数保持不变，保证同一账本不会混用规则）。
+
+### 通过 API 修改配置
+
+`GET /admin-api/settings` 返回磁盘上 `config.json` 中可编辑的部分（即上表中的配置），以及 `version`（文件内容的哈希）和 `inForce`（磁盘上的文件是否就是当前运行的配置；在服务器上手工修改但未重载时为 `false`）。
+
+`PUT /admin-api/settings` 提交 `{"version": "...", "settings": {...}}`（需要会话 Cookie 和 `X-CSRF-Token`）来修改配置：
+
+1. 版本号必须与当前文件一致，因此不会覆盖其他管理员或服务器上的手工修改（`409 settings_conflict`）。
+2. 只替换可编辑的键，其他配置和键的顺序保持不变；未知字段会被拒绝（`400 settings_invalid`）。
+3. 修改后的整份配置按重载流程校验，被拒绝时不会写入任何内容（`422`，附重载报告）。
+4. 校验通过后，原文件保存为 `config.json.bak`，新文件原子写入并立即生效（`200`，附报告）。
+
+每次修改尝试都会追加到 `config.json.audit.log`（管理员、来源地址、改动、错误）。网页后台的**编辑配置**面板使用的就是这个接口。
+
+```bash
+curl -s -b cookies -c cookies -H 'Origin: https://pool.example' \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"..."}' https://api.pool.example/admin-api/auth/login
+# 返回 {"csrfToken": "..."}，然后：
+curl -s -b cookies -H 'Origin: https://pool.example' https://api.pool.example/admin-api/settings > settings.json
+# 修改 .settings 后，连同读取到的 version 一起提交：
+curl -s -b cookies -X PUT -H 'Origin: https://pool.example' -H "X-CSRF-Token: $CSRF" \
+  -H 'Content-Type: application/json' -d @request.json https://api.pool.example/admin-api/settings
+```
+
+这些接口可以修改管理员账号和证书路径，请妥善保护管理员密码。
 
 ## 生产部署
 

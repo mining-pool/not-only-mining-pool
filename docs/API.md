@@ -173,6 +173,7 @@ return 503 while public lookups keep working.
 | `GET /admin-api/auth/session` | Current session; 401 when absent or expired |
 | `POST /admin-api/auth/logout` | Checks `X-CSRF-Token`, destroys the session and clears the cookie |
 | `GET` / `POST /admin-api/reload` | Last configuration reload / reload now (POST needs `X-CSRF-Token`), see [Configuration reload](#configuration-reload) |
+| `GET` / `PUT /admin-api/settings` | Read / write and apply the reloadable settings (PUT needs `X-CSRF-Token`), see [Editing settings through the API](#editing-settings-through-the-api) |
 | `/admin-api/*` | Pool API behind the session (same paths as `/api/*`, including the full miner index and payout ledger; currently read-only) |
 
 - The session cookie is HttpOnly, Secure over HTTPS, scoped to `/admin-api`.
@@ -191,7 +192,8 @@ return 503 while public lookups keep working.
 The pool re-reads its configuration file without a restart when it receives
 `SIGHUP`, or when an administrator clicks **Reload configuration** in the web
 portal (`POST /admin-api/reload`, which needs the session and CSRF token and
-only re-reads the file on the server — nothing is uploaded).
+re-reads the file on the server). To change settings over the API instead of
+editing the file, see [Editing settings through the API](#editing-settings-through-the-api).
 
 ```bash
 kill -HUP "$(pidof nomp)"
@@ -229,6 +231,43 @@ These need a restart and make a reload fail: `coin`, `engine`, `algorithm`,
 `api.host`, `api.port`, enabling or disabling `api.tls`, and every `payment`
 field other than the three above (the pay mode and accounting parameters stay
 fixed so one ledger never mixes rules).
+
+### Editing settings through the API
+
+`GET /admin-api/settings` returns the editable part of `config.json` on disk —
+exactly the settings in the table above — with a `version` (a hash of the file)
+and `inForce` (whether the file on disk is what is running; `false` after an
+edit on the server that was not reloaded).
+
+`PUT /admin-api/settings` with `{"version": "...", "settings": {...}}` (and the
+session cookie and `X-CSRF-Token`) changes them:
+
+1. The version must still match the file, so a concurrent edit — another
+   administrator or a manual change on the server — is never overwritten
+   (`409 settings_conflict`).
+2. Only the editable keys are replaced; every other setting, and the order of
+   keys, stays as it was. Unknown fields are rejected (`400 settings_invalid`).
+3. The whole resulting configuration is validated like a reload. If it is
+   rejected, nothing is written (`422` with the reload report).
+4. Otherwise the previous file is kept as `config.json.bak`, the new one is
+   written atomically, and it is applied (`200` with the report).
+
+Every attempt is appended to `config.json.audit.log` (administrator, address,
+changes, errors). The web portal's **Edit configuration** panel uses this API.
+
+```bash
+curl -s -b cookies -c cookies -H 'Origin: https://pool.example' \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"..."}' https://api.pool.example/admin-api/auth/login
+# → {"csrfToken": "..."}; then
+curl -s -b cookies -H 'Origin: https://pool.example' https://api.pool.example/admin-api/settings > settings.json
+# edit .settings, then send it back with the version you read:
+curl -s -b cookies -X PUT -H 'Origin: https://pool.example' -H "X-CSRF-Token: $CSRF" \
+  -H 'Content-Type: application/json' -d @request.json https://api.pool.example/admin-api/settings
+```
+
+These endpoints can change the administrator account and certificate paths;
+protect the administrator password accordingly.
 
 ## Production deployment
 
