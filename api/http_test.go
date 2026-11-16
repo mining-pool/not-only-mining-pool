@@ -52,6 +52,13 @@ func TestCredentialedCORSAndCSRF(t *testing.T) {
 	if w.Code != 204 || !strings.Contains(w.Header().Get("Access-Control-Allow-Headers"), "X-CSRF-Token") {
 		t.Fatal("login preflight requires authentication")
 	}
+	// Every method the admin API uses must pass a cross-origin preflight,
+	// including PUT for /admin-api/settings.
+	for _, method := range []string{"GET", "POST", "PUT"} {
+		if !strings.Contains(w.Header().Get("Access-Control-Allow-Methods"), method) {
+			t.Fatalf("preflight does not allow %s: %q", method, w.Header().Get("Access-Control-Allow-Methods"))
+		}
+	}
 	if w := request("GET", "/admin-api/probe", "", "", nil); w.Code != 401 {
 		t.Fatal("CORS bypassed authentication")
 	}

@@ -253,7 +253,7 @@ func (a *adminAuth) handle(w http.ResponseWriter, r *http.Request, public http.H
 		a.setCookie(w, r, "", time.Unix(1, 0), -1)
 		jsonResponse(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
-		public.ServeHTTP(w, withAdmin(r))
+		public.ServeHTTP(w, withAdmin(r, session.Username))
 	}
 }
 

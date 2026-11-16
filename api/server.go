@@ -79,6 +79,7 @@ func NewServer(options *config.Options, storage *storage.DB) (*Server, error) {
 	// Admin-only routes; everything else falls through to the public API.
 	s.adminRouter = mux.NewRouter()
 	s.adminRouter.HandleFunc("/reload", s.reloadFunc).Methods(http.MethodGet, http.MethodHead, http.MethodPost)
+	s.adminRouter.HandleFunc("/settings", s.settingsFunc).Methods(http.MethodGet, http.MethodHead, http.MethodPut)
 	s.adminRouter.NotFoundHandler = s.Router
 	s.adminRouter.MethodNotAllowedHandler = s.Router
 

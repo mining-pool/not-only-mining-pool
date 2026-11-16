@@ -51,7 +51,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			apiError(w, http.StatusForbidden, "origin_mismatch", "Request origin is not allowed.")
 			return
 		}
-		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token")
 		w.WriteHeader(http.StatusNoContent)
 		return

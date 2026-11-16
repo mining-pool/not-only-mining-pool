@@ -2,6 +2,8 @@ package pool
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,10 +22,17 @@ import (
 // runtime enrichment such as coin.testnet) so a reload can tell which
 // settings the operator changed.
 type reloadState struct {
-	mu   sync.Mutex
-	path string
-	file *config.Options
-	last *api.ReloadReport
+	mu      sync.Mutex
+	path    string
+	file    *config.Options
+	applied string // version of the file content in force
+	last    *api.ReloadReport
+}
+
+// fileVersion identifies a configuration file's content.
+func fileVersion(raw []byte) string {
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
 }
 
 // DecodeConfig parses a configuration file.
@@ -43,7 +52,7 @@ func (p *Pool) EnableReload(path string, raw []byte) error {
 		return err
 	}
 	p.reload.mu.Lock()
-	p.reload.path, p.reload.file = path, file
+	p.reload.path, p.reload.file, p.reload.applied = path, file, fileVersion(raw)
 	p.reload.mu.Unlock()
 	p.APIServer.SetReloader(p)
 	return nil
@@ -140,31 +149,50 @@ func validateReloadable(next *config.Options, gbt bool) error {
 // Reload re-reads the configuration file and applies every setting that can
 // change at runtime. Either all of it applies or, on any validation error,
 // nothing does and the pool keeps running unchanged.
-func (p *Pool) Reload(trigger string) api.ReloadReport {
+func (p *Pool) Reload(trigger, actor string) api.ReloadReport {
 	p.reload.mu.Lock()
 	defer p.reload.mu.Unlock()
-	report := api.ReloadReport{At: time.Now().UTC(), Trigger: trigger, Changes: []string{}, Errors: []string{}}
-	defer func() {
-		r := report
-		p.reload.last = &r
-		if report.OK {
-			log.Warnf("configuration reloaded (%s): %v", trigger, report.Changes)
-		} else {
-			log.Errorf("configuration reload (%s) rejected: %v", trigger, report.Errors)
-		}
-	}()
+	if p.reload.path == "" {
+		return p.record(api.ReloadReport{At: time.Now().UTC(), Trigger: trigger, Actor: actor, Changes: []string{}, Errors: []string{"reload is not enabled"}})
+	}
+	raw, err := os.ReadFile(p.reload.path)
+	if err != nil {
+		return p.record(api.ReloadReport{At: time.Now().UTC(), Trigger: trigger, Actor: actor, Changes: []string{}, Errors: []string{err.Error()}})
+	}
+	return p.applyRaw(raw, trigger, actor, nil)
+}
+
+// record stores and logs a finished attempt.
+func (p *Pool) record(report api.ReloadReport) api.ReloadReport {
+	r := report
+	p.reload.last = &r
+	if report.OK {
+		log.Warnf("configuration reloaded (%s%s): %v", report.Trigger, by(report.Actor), report.Changes)
+	} else {
+		log.Errorf("configuration reload (%s%s) rejected: %v", report.Trigger, by(report.Actor), report.Errors)
+	}
+	return report
+}
+
+func by(actor string) string {
+	if actor == "" {
+		return ""
+	}
+	return " by " + actor
+}
+
+// applyRaw validates raw as the new configuration and applies it. persist,
+// when set, runs after everything validated and before anything is applied
+// (the settings API writes config.json there); its failure aborts the change.
+// The caller holds reload.mu.
+func (p *Pool) applyRaw(raw []byte, trigger, actor string, persist func() error) (report api.ReloadReport) {
+	report = api.ReloadReport{At: time.Now().UTC(), Trigger: trigger, Actor: actor, Changes: []string{}, Errors: []string{}}
+	defer func() { report = p.record(report) }()
 	fail := func(err error) api.ReloadReport {
 		report.Errors = append(report.Errors, err.Error())
 		return report
 	}
 
-	if p.reload.path == "" {
-		return fail(errors.New("reload is not enabled"))
-	}
-	raw, err := os.ReadFile(p.reload.path)
-	if err != nil {
-		return fail(err)
-	}
 	next, err := DecodeConfig(raw)
 	if err != nil {
 		return fail(fmt.Errorf("%s: %w", p.reload.path, err))
@@ -190,6 +218,12 @@ func (p *Pool) Reload(trigger string) api.ReloadReport {
 	var engineApply func() []string
 	if r, ok := p.Engine.(engine.Reconfigurable); ok {
 		if engineApply, err = r.PrepareReload(next); err != nil {
+			ports.Abort()
+			return fail(err)
+		}
+	}
+	if persist != nil {
+		if err := persist(); err != nil {
 			ports.Abort()
 			return fail(err)
 		}
@@ -220,7 +254,7 @@ func (p *Pool) Reload(trigger string) api.ReloadReport {
 		report.Changes = append(report.Changes, "tcpProxyProtocol (new connections)")
 	}
 	feesChanged := false
-	if a, b := mustJSON(current.RewardRecipients), mustJSON(next.RewardRecipients); !bytes.Equal(a, b) {
+	if !sameRecipients(current.RewardRecipients, next.RewardRecipients) {
 		feesChanged = true
 		report.Changes = append(report.Changes, "rewardRecipients (from the next job)")
 	}
@@ -252,12 +286,21 @@ func (p *Pool) Reload(trigger string) api.ReloadReport {
 	p.APIServer.UpdatePorts(applied.Ports)
 	p.Stats.StratumPorts = p.StratumServer.Ports()
 	p.reload.file = next
+	p.reload.applied = fileVersion(raw)
 
 	if len(report.Changes) == 0 {
 		report.Changes = append(report.Changes, "no changes")
 	}
 	report.OK = len(report.Errors) == 0
 	return report
+}
+
+// sameRecipients treats a missing list and an empty one as equal.
+func sameRecipients(a, b []*config.Recipient) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+	return bytes.Equal(mustJSON(a), mustJSON(b))
 }
 
 func mustJSON(v interface{}) []byte {

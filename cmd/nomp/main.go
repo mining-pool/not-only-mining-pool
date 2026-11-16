@@ -70,7 +70,7 @@ func main() {
 	reload := make(chan os.Signal, 1)
 	signal.Notify(reload, syscall.SIGHUP)
 	for range reload {
-		p.Reload("signal")
+		p.Reload("signal", "")
 	}
 }
 

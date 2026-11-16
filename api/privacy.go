@@ -13,13 +13,19 @@ import (
 
 type adminContextKey struct{}
 
-func withAdmin(r *http.Request) *http.Request {
-	return r.WithContext(context.WithValue(r.Context(), adminContextKey{}, true))
+func withAdmin(r *http.Request, username string) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), adminContextKey{}, username))
 }
 
 // isAdmin reports whether the request arrived through an authenticated /admin-api session.
 func isAdmin(r *http.Request) bool {
-	v, _ := r.Context().Value(adminContextKey{}).(bool)
+	_, ok := r.Context().Value(adminContextKey{}).(string)
+	return ok
+}
+
+// adminUser is the signed-in administrator, or "" outside an admin session.
+func adminUser(r *http.Request) string {
+	v, _ := r.Context().Value(adminContextKey{}).(string)
 	return v
 }
 

@@ -2,8 +2,10 @@ package api
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"reflect"
 	"sync"
@@ -41,7 +43,8 @@ type hashrate struct {
 // ReloadReport describes one configuration reload attempt.
 type ReloadReport struct {
 	At      time.Time `json:"at"`
-	Trigger string    `json:"trigger"` // "signal" or "admin"
+	Trigger string    `json:"trigger"`         // "signal", "admin" or "settings"
+	Actor   string    `json:"actor,omitempty"` // administrator and address, for console changes
 	OK      bool      `json:"ok"`
 	Changes []string  `json:"changes"`
 	Errors  []string  `json:"errors"`
@@ -50,8 +53,31 @@ type ReloadReport struct {
 // Reloader is implemented by the pool: it re-reads the configuration file and
 // applies what can change at runtime.
 type Reloader interface {
-	Reload(trigger string) ReloadReport
+	Reload(trigger, actor string) ReloadReport
 	LastReload() *ReloadReport
+}
+
+// SettingsEditor is implemented by the pool: it edits the reloadable part of
+// config.json and applies it as one change.
+type SettingsEditor interface {
+	SettingsJSON() (interface{}, error)
+	UpdateSettingsJSON(version string, settings json.RawMessage, actor string) (ReloadReport, error)
+}
+
+var (
+	// ErrSettingsConflict: config.json changed since the editor read it.
+	ErrSettingsConflict = errors.New("config.json changed since it was read")
+	// ErrSettingsInvalid: the submitted settings are malformed.
+	ErrSettingsInvalid = errors.New("invalid settings")
+)
+
+// actor names the administrator behind a console action, for logs and audit.
+func actor(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	return adminUser(r) + "@" + host
 }
 
 // SetReloader enables the admin reload endpoints.
@@ -77,10 +103,51 @@ func (s *Server) reloadFunc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodPost {
-		jsonResponse(w, http.StatusOK, reloader.Reload("admin"))
+		jsonResponse(w, http.StatusOK, reloader.Reload("admin", actor(r)))
 		return
 	}
 	jsonResponse(w, http.StatusOK, map[string]interface{}{"last": reloader.LastReload()})
+}
+
+// settingsFunc serves GET (editable settings + version) and PUT (write and
+// apply) on /admin-api/settings.
+func (s *Server) settingsFunc(w http.ResponseWriter, r *http.Request) {
+	editor, ok := s.currentReloader().(SettingsEditor)
+	if !ok {
+		apiError(w, http.StatusNotImplemented, "reload_unavailable", "Configuration reload is not available on this server.")
+		return
+	}
+	if r.Method != http.MethodPut {
+		doc, err := editor.SettingsJSON()
+		if err != nil {
+			apiError(w, http.StatusInternalServerError, "settings_unavailable", err.Error())
+			return
+		}
+		jsonResponse(w, http.StatusOK, doc)
+		return
+	}
+	var body struct {
+		Version  string          `json:"version"`
+		Settings json.RawMessage `json:"settings"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil || body.Version == "" || len(body.Settings) == 0 {
+		apiError(w, http.StatusBadRequest, "settings_invalid", "Send {\"version\": ..., \"settings\": {...}}.")
+		return
+	}
+	report, err := editor.UpdateSettingsJSON(body.Version, body.Settings, actor(r))
+	switch {
+	case errors.Is(err, ErrSettingsConflict):
+		apiError(w, http.StatusConflict, "settings_conflict", "config.json changed since it was loaded; reload the settings and apply your change again.")
+	case errors.Is(err, ErrSettingsInvalid):
+		apiError(w, http.StatusBadRequest, "settings_invalid", err.Error())
+	case err != nil:
+		apiError(w, http.StatusInternalServerError, "settings_unavailable", err.Error())
+	case !report.OK:
+		// Nothing was written or applied.
+		jsonResponse(w, http.StatusUnprocessableEntity, report)
+	default:
+		jsonResponse(w, http.StatusOK, report)
+	}
 }
 
 // PreparedAPI is a validated API settings change.

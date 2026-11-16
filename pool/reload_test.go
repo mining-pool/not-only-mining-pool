@@ -164,7 +164,7 @@ func TestReloadRejectsSettingsThatNeedARestart(t *testing.T) {
 	h.set("coin.name", "Other")
 	h.set("ports", map[string]interface{}{strconv.Itoa(h.portB): map[string]interface{}{"diff": 1}})
 
-	r := h.pool.Reload("signal")
+	r := h.pool.Reload("signal", "")
 	if r.OK || len(r.Errors) != 1 || !strings.Contains(r.Errors[0], "coin") {
 		t.Fatalf("report: %+v", r)
 	}
@@ -186,7 +186,7 @@ func TestReloadIsAllOrNothing(t *testing.T) {
 	_ = os.WriteFile(bad, []byte("not a bcrypt hash"), 0o600)
 	h.set("api.admin.passwordHashFile", bad)
 
-	if r := h.pool.Reload("admin"); r.OK || !strings.Contains(strings.Join(r.Errors, " "), "bcrypt") {
+	if r := h.pool.Reload("admin", ""); r.OK || !strings.Contains(strings.Join(r.Errors, " "), "bcrypt") {
 		t.Fatalf("report: %+v", r)
 	}
 	if accepts(h.portB) {
@@ -204,7 +204,7 @@ func TestReloadAppliesRuntimeSettings(t *testing.T) {
 	h.set("connectionTimeout", 900)
 	h.set("api.allowedOrigins", []string{"https://pool.test", "https://new.pool.test"})
 
-	r := h.pool.Reload("signal")
+	r := h.pool.Reload("signal", "")
 	if !r.OK {
 		t.Fatalf("report: %+v", r)
 	}
@@ -237,7 +237,7 @@ func TestReloadAppliesRuntimeSettings(t *testing.T) {
 		t.Fatalf("public ports after reload: %d %s", w.Code, w.Body.String())
 	}
 
-	if r := h.pool.Reload("signal"); !r.OK || len(r.Changes) != 1 || r.Changes[0] != "no changes" {
+	if r := h.pool.Reload("signal", ""); !r.OK || len(r.Changes) != 1 || r.Changes[0] != "no changes" {
 		t.Fatalf("unchanged reload: %+v", r)
 	}
 }
@@ -296,14 +296,14 @@ func TestReloadValidatesEngineSettings(t *testing.T) {
 		strconv.Itoa(h.portA): map[string]interface{}{"diff": 8},
 		strconv.Itoa(h.portB): map[string]interface{}{"diff": 1},
 	})
-	if r := h.pool.Reload("signal"); r.OK || !strings.Contains(strings.Join(r.Errors, " "), "engine says no") {
+	if r := h.pool.Reload("signal", ""); r.OK || !strings.Contains(strings.Join(r.Errors, " "), "engine says no") {
 		t.Fatalf("report: %+v", r)
 	}
 	if accepts(h.portB) || eng.applied != 0 {
 		t.Fatal("a reload the engine rejected was applied")
 	}
 	eng.reject = nil
-	r := h.pool.Reload("signal")
+	r := h.pool.Reload("signal", "")
 	if !r.OK || eng.applied != 1 || !strings.Contains(strings.Join(r.Changes, " "), "engine settings") || !accepts(h.portB) {
 		t.Fatalf("report: %+v", r)
 	}

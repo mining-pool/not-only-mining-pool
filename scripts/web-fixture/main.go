@@ -220,6 +220,6 @@ func main() {
 		if sig != syscall.SIGHUP {
 			return
 		}
-		p.Reload("signal")
+		p.Reload("signal", "")
 	}
 }
