@@ -51,6 +51,10 @@ func (f *fakeEngine) Watch(_ func()) error         { select {} }
 func (f *fakeEngine) OnSubscribe(_ engine.Session, _ []interface{}) (interface{}, []byte, int) {
 	return true, nil, 0
 }
+func (f *fakeEngine) Hashrate() engine.HashrateUnit {
+	return engine.HashrateUnit{PerDiff: 1, Unit: "H/s"}
+}
+
 func (f *fakeEngine) JobNotification(_ bool) (string, []interface{}) {
 	return "", []interface{}{"0xheader", "0xseed", "0xtarget-global"}
 }
