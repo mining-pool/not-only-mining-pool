@@ -1,6 +1,8 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/mining-pool/not-only-mining-pool/utils"
@@ -36,6 +38,26 @@ func (r *Recipient) GetScript() []byte {
 	}
 
 	return r.script
+}
+
+// ValidateRecipients checks fee recipients: non-negative percentages that sum
+// below 100% and, for coins whose coinbase the pool builds (needScript), an
+// output script for every address.
+func ValidateRecipients(recipients []*Recipient, needScript bool) error {
+	var total float64
+	for _, r := range recipients {
+		if r == nil || r.Percent < 0 {
+			return errors.New("rewardRecipients: percent must not be negative")
+		}
+		total += r.Percent
+		if needScript && r.GetScript() == nil {
+			return fmt.Errorf("rewardRecipients: cannot build a script for %s (%s)", r.Address, r.Type)
+		}
+	}
+	if total >= 100 {
+		return errors.New("rewardRecipients: total fee must be below 100%")
+	}
+	return nil
 }
 
 type PaymentOptions struct {

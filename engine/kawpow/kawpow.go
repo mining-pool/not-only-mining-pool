@@ -80,6 +80,7 @@ type job struct {
 // Engine is the KawPow mining engine.
 type Engine struct {
 	opts         *config.Options
+	recipients   atomic.Pointer[[]*config.Recipient] // fee outputs; reloadable
 	dm           *daemons.DaemonManager
 	pow          *kawpow.Client
 	pollInterval time.Duration
@@ -105,7 +106,12 @@ func (e *Engine) Name() string { return "kawpow" }
 func (e *Engine) NotifyMethod() string { return "mining.notify" }
 
 func (e *Engine) Init(opts *config.Options) error {
+	if err := config.ValidateRecipients(opts.RewardRecipients, true); err != nil {
+		return err
+	}
 	e.opts = opts
+	recipients := opts.RewardRecipients
+	e.recipients.Store(&recipients)
 	e.pow = kawpow.NewRavencoin()
 	e.dm = daemons.NewDaemonManager(opts.Daemons, opts.Coin)
 
@@ -141,7 +147,7 @@ func (e *Engine) acceptTemplate(gbt *daemons.GetBlockTemplate) {
 		utils.HexDecode([]byte("f000000ff111111f")), // 8-byte extranonce space, fixed below
 		"POW",
 		e.opts.Coin.TxMessages,
-		e.opts.RewardRecipients,
+		*e.recipients.Load(),
 		nil, // RVN uses the default double-SHA256 merkle
 	)
 
@@ -390,4 +396,16 @@ func seedHash(height uint64) []byte {
 // Hashrate: shares are checked against diff1/diff.
 func (e *Engine) Hashrate() engine.HashrateUnit {
 	return engine.HashrateUnit{PerDiff: engine.HashesPerDiff(diff1), Unit: "H/s"}
+}
+
+// PrepareReload validates new fee recipients; they apply from the next job.
+func (e *Engine) PrepareReload(next *config.Options) (func() []string, error) {
+	if err := config.ValidateRecipients(next.RewardRecipients, true); err != nil {
+		return nil, err
+	}
+	recipients := next.RewardRecipients
+	return func() []string {
+		e.recipients.Store(&recipients)
+		return nil // reported by the pool as rewardRecipients
+	}, nil
 }

@@ -3,6 +3,7 @@ package pool
 import (
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -62,8 +63,22 @@ func freePort(t *testing.T) int {
 	return l.Addr().(*net.TCPAddr).Port
 }
 
+// reconfEngine is an idle engine with reloadable settings.
+type reconfEngine struct {
+	idleEngine
+	reject  error
+	applied int
+}
+
+func (e *reconfEngine) PrepareReload(*config.Options) (func() []string, error) {
+	if e.reject != nil {
+		return nil, e.reject
+	}
+	return func() []string { e.applied++; return []string{"engine settings"} }, nil
+}
+
 // newHarness starts a pool (stratum + API, no node) from a real config file.
-func newHarness(t *testing.T) *harness {
+func newHarness(t *testing.T, engines ...engine.Engine) *harness {
 	t.Helper()
 	dir := t.TempDir()
 	hash, _ := bcrypt.GenerateFromPassword([]byte(adminPassword), 10)
@@ -91,8 +106,12 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eng := &idleEngine{stop: make(chan struct{})}
-	t.Cleanup(func() { close(eng.stop) })
+	stop := make(chan struct{})
+	t.Cleanup(func() { close(stop) })
+	var eng engine.Engine = &idleEngine{stop: stop}
+	if len(engines) > 0 {
+		eng = engines[0]
+	}
 	server, err := api.NewServer(options, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -267,5 +286,25 @@ func TestAdminReloadEndpoint(t *testing.T) {
 	w = h.admin("GET", "/admin-api/reload", "", cookie, "")
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "connectionTimeout") {
 		t.Fatalf("status: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestReloadValidatesEngineSettings(t *testing.T) {
+	eng := &reconfEngine{idleEngine: idleEngine{stop: make(chan struct{})}, reject: errors.New("engine says no")}
+	h := newHarness(t, eng)
+	h.set("ports", map[string]interface{}{
+		strconv.Itoa(h.portA): map[string]interface{}{"diff": 8},
+		strconv.Itoa(h.portB): map[string]interface{}{"diff": 1},
+	})
+	if r := h.pool.Reload("signal"); r.OK || !strings.Contains(strings.Join(r.Errors, " "), "engine says no") {
+		t.Fatalf("report: %+v", r)
+	}
+	if accepts(h.portB) || eng.applied != 0 {
+		t.Fatal("a reload the engine rejected was applied")
+	}
+	eng.reject = nil
+	r := h.pool.Reload("signal")
+	if !r.OK || eng.applied != 1 || !strings.Contains(strings.Join(r.Changes, " "), "engine settings") || !accepts(h.portB) {
+		t.Fatalf("report: %+v", r)
 	}
 }

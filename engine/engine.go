@@ -58,6 +58,15 @@ type Session interface {
 // Engine encapsulates everything coin-model-specific. Implementations are
 // expected to be safe for concurrent use: OnSubscribe/OnSubmit are called from
 // per-connection goroutines while Poll runs in its own goroutine.
+// Reconfigurable is implemented by engines that keep settings a configuration
+// reload may change (fee recipients, engine payout thresholds). PrepareReload
+// validates next without side effects and returns a function that applies it
+// and describes what changed; the pool only calls apply once every part of the
+// reload has validated, so an error leaves the engine untouched.
+type Reconfigurable interface {
+	PrepareReload(next *config.Options) (apply func() []string, err error)
+}
+
 // HashrateUnit converts accepted share difficulty per second into a rate:
 // rate = diff/s × PerDiff, reported in Unit ("H/s", or "Sol/s" for
 // Equihash-family proofs where a share is a solution, not a hash).

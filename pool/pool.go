@@ -144,10 +144,8 @@ func NewPool(options *config.Options) *Pool {
 		log.Panicf("failed to get poolAddress' script, check the address and type")
 	}
 
-	for _, addr := range options.RewardRecipients {
-		if addr.GetScript() == nil {
-			log.Panicf("failed to get addr %s' script, check the address and type", addr.Address)
-		}
+	if err := config.ValidateRecipients(options.RewardRecipients, true); err != nil {
+		log.Panic(err)
 	}
 
 	var magnitude int64 = 100000000 //sat

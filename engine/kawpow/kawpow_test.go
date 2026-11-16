@@ -8,6 +8,7 @@ import (
 
 	"github.com/mining-pool/not-only-mining-pool/engine"
 
+	"github.com/mining-pool/not-only-mining-pool/config"
 	"github.com/mining-pool/not-only-mining-pool/daemons"
 	"github.com/mining-pool/not-only-mining-pool/jobs"
 	"github.com/mining-pool/not-only-mining-pool/types"
@@ -160,5 +161,32 @@ func TestHashrateUsesKawpowDiff1(t *testing.T) {
 	r := New().Hashrate()
 	if r.Unit != "H/s" || r.PerDiff < 4311810304 || r.PerDiff > 4311810306 {
 		t.Fatalf("kawpow hashrate unit = %+v", r)
+	}
+}
+
+func TestFeeRecipientsReloadFromTheNextJob(t *testing.T) {
+	e := New()
+	initial := []*config.Recipient{}
+	e.recipients.Store(&initial)
+	for name, fees := range map[string][]*config.Recipient{
+		"no script":    {{Address: "anything", Type: ""}},
+		"fees at 100%": {{Address: "1BoatSLRHtKNngkdXEeobR76b53LETtpyT", Type: "p2pkh", Percent: 100}},
+		"negative fee": {{Address: "1BoatSLRHtKNngkdXEeobR76b53LETtpyT", Type: "p2pkh", Percent: -1}},
+	} {
+		if _, err := e.PrepareReload(&config.Options{RewardRecipients: fees}); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+	if len(*e.recipients.Load()) != 0 {
+		t.Fatal("rejected reload changed the recipients")
+	}
+	fee := &config.Recipient{Address: "1BoatSLRHtKNngkdXEeobR76b53LETtpyT", Type: "p2pkh", Percent: 1}
+	apply, err := e.PrepareReload(&config.Options{RewardRecipients: []*config.Recipient{fee}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	apply()
+	if got := *e.recipients.Load(); len(got) != 1 || got[0] != fee {
+		t.Fatalf("recipients %v", got)
 	}
 }

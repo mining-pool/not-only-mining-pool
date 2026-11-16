@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/go-redis/redis/v8"
@@ -297,5 +298,69 @@ func TestQuantusPayoutResumeAndFinalizedFailure(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func reloadOptions(minimum, reserve string, fees ...*config.Recipient) *config.Options {
+	return &config.Options{
+		PaymentOptions:   &config.PaymentOptions{Interval: 30},
+		RewardRecipients: fees,
+		Quantus: &config.QuantusOptions{Payments: &config.QuantusPaymentOptions{
+			RPCURL: "ws://node", WalletScript: "wallet.js", SeedFile: "seed", GenesisHash: strings.Repeat("ab", 32),
+			RewardAddress: testReward, MinPaymentUnits: minimum, ReserveUnits: reserve,
+		}},
+	}
+}
+
+func TestQuantusPaymentSettingsReloadBetweenTicks(t *testing.T) {
+	p := testPayments(t)
+	p.q.MinPaymentUnits, p.q.ReserveUnits = "100", "100"
+	p.minimum, p.interval = big.NewInt(100), time.Minute
+	p.existentialDeposit, p.sender = big.NewInt(100), testOther
+	p.reloads = &reloadQueue{intervals: make(chan time.Duration, 1),
+		current: paymentReload{q: p.q, minimum: p.minimum, interval: p.interval}}
+	e := &Engine{payments: p}
+
+	for name, bad := range map[string]*config.Options{
+		"below existential deposit": reloadOptions("99", "100"),
+		"not a u128":                reloadOptions("1.5", "100"),
+		"signing wallet as fee":     reloadOptions("100", "100", &config.Recipient{Address: testOther, Percent: 1}),
+		"fees at 100%":              reloadOptions("100", "100", &config.Recipient{Address: testMiner, Percent: 100}),
+	} {
+		if _, err := e.PrepareReload(bad); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+
+	apply, err := e.PrepareReload(reloadOptions("5000", "800", &config.Recipient{Address: testMiner, Percent: 1}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changes := apply(); len(changes) != 1 {
+		t.Fatalf("changes %v", changes)
+	}
+	if p.minimum.Int64() != 100 || len(p.recipients) != 0 {
+		t.Fatal("settings changed before the next payout run")
+	}
+	select {
+	case d := <-p.reloads.intervals:
+		if d != 30*time.Second {
+			t.Fatal(d)
+		}
+	default:
+		t.Fatal("interval change not signalled")
+	}
+	p.applyPending()
+	if p.minimum.Int64() != 5000 || p.q.ReserveUnits != "800" || len(p.recipients) != 1 || p.interval != 30*time.Second {
+		t.Fatalf("not applied: min=%v reserve=%s fees=%d interval=%v", p.minimum, p.q.ReserveUnits, len(p.recipients), p.interval)
+	}
+	// Unchanged thresholds report no change.
+	apply, _ = e.PrepareReload(reloadOptions("5000", "800", &config.Recipient{Address: testMiner, Percent: 1}))
+	if changes := apply(); len(changes) != 0 {
+		t.Fatalf("unchanged reload reported %v", changes)
+	}
+	// Payments disabled: nothing to validate or apply.
+	if apply, err := (&Engine{}).PrepareReload(reloadOptions("1", "1")); err != nil || apply() != nil {
+		t.Fatal("engine without payments must accept reloads")
 	}
 }

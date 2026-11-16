@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -100,6 +101,48 @@ type quantusPayments struct {
 	minimum    *big.Int
 	recipients []*config.Recipient
 	call       func(string, map[string]interface{}) (*walletReply, error)
+
+	// existentialDeposit and sender bound reloadable settings; reloads holds a
+	// reload applied at the start of the next tick, never during one.
+	existentialDeposit *big.Int
+	sender             string
+	reloads            *reloadQueue
+}
+
+// reloadQueue hands a configuration reload to the payout goroutine. It is
+// allocated separately so the payout state can be copied (tests do).
+type reloadQueue struct {
+	mu        sync.Mutex
+	pending   *paymentReload
+	current   paymentReload // what the payout goroutine runs with
+	intervals chan time.Duration
+}
+
+// paymentReload is the reloadable part of the Quantus payout settings.
+type paymentReload struct {
+	q          *config.QuantusPaymentOptions
+	minimum    *big.Int
+	recipients []*config.Recipient
+	interval   time.Duration
+}
+
+// applyPending installs reloaded settings between ticks.
+func (p *quantusPayments) applyPending() {
+	if p.reloads == nil {
+		return
+	}
+	p.reloads.mu.Lock()
+	r := p.reloads.pending
+	p.reloads.pending = nil
+	if r != nil {
+		p.reloads.current = *r
+	}
+	p.reloads.mu.Unlock()
+	if r == nil {
+		return
+	}
+	p.q, p.minimum, p.recipients, p.interval = r.q, r.minimum, r.recipients, r.interval
+	log.Warnf("Quantus payments: reloaded minPaymentUnits=%s reserveUnits=%s fees=%d interval=%s", p.q.MinPaymentUnits, p.q.ReserveUnits, len(p.recipients), p.interval)
 }
 
 func units(s string) (*big.Int, error) {
@@ -205,6 +248,8 @@ func (e *Engine) InitPayments(opts *config.Options, db *storage.DB) error {
 	p := &quantusPayments{ctx: e.ctx, db: db.Client, key: opts.Coin.Name + ":quantus:ledger", q: opts.Quantus.Payments,
 		mode: opts.PaymentOptions.WithDefaults().PayMode, interval: time.Duration(opts.PaymentOptions.WithDefaults().Interval) * time.Second, recipients: opts.RewardRecipients}
 	p.minimum, _ = units(p.q.MinPaymentUnits)
+	p.reloads = &reloadQueue{intervals: make(chan time.Duration, 1),
+		current: paymentReload{q: p.q, minimum: p.minimum, recipients: p.recipients, interval: p.interval}}
 	p.call = p.wallet
 	info, err := p.call("info", nil)
 	if err != nil {
@@ -238,6 +283,7 @@ func (e *Engine) InitPayments(opts *config.Options, db *storage.DB) error {
 	if err != nil {
 		return err
 	}
+	p.existentialDeposit, p.sender = ed, info.Sender
 	e.payments = p
 	e.payoutSender = info.Sender
 	log.Warnf("Quantus payments enabled (%s), finalized height %d, signing wallet %s", p.mode, info.Finalized, info.Sender)
@@ -248,15 +294,68 @@ func (e *Engine) ServePayments() {
 	t := time.NewTicker(p.interval)
 	defer t.Stop()
 	for {
+		p.applyPending()
 		if err := p.tick(); err != nil {
 			log.Error("Quantus payments: ", err)
 		}
+	wait:
 		select {
 		case <-e.ctx.Done():
 			return
+		case d := <-p.reloads.intervals:
+			t.Reset(d)
+			goto wait
 		case <-t.C:
 		}
 	}
+}
+
+// PrepareReload validates reloaded fee recipients, payout interval and the
+// minPaymentUnits/reserveUnits thresholds with the same rules as startup. They
+// apply from the next payout run.
+func (e *Engine) PrepareReload(next *config.Options) (func() []string, error) {
+	p := e.payments
+	if p == nil {
+		return func() []string { return nil }, nil // payments not running
+	}
+	if err := validatePayments(next); err != nil {
+		return nil, err
+	}
+	q := next.Quantus.Payments
+	minimum, _ := units(q.MinPaymentUnits)
+	reserve, _ := units(q.ReserveUnits)
+	if minimum.Cmp(p.existentialDeposit) < 0 || reserve.Cmp(p.existentialDeposit) < 0 {
+		return nil, errors.New("quantus: minPaymentUnits and reserveUnits must be at least the chain existential deposit")
+	}
+	for _, r := range next.RewardRecipients {
+		if r.Address == p.sender {
+			return nil, errors.New("quantus: fee recipient cannot be signing wallet")
+		}
+	}
+	reload := &paymentReload{q: q, minimum: minimum, recipients: next.RewardRecipients,
+		interval: time.Duration(next.PaymentOptions.WithDefaults().Interval) * time.Second}
+	return func() []string {
+		queue := p.reloads
+		queue.mu.Lock()
+		defer queue.mu.Unlock()
+		// Compare against the newest settings: still pending, or in force.
+		latest := queue.current
+		if queue.pending != nil {
+			latest = *queue.pending
+		}
+		var changes []string
+		if q.MinPaymentUnits != latest.q.MinPaymentUnits || q.ReserveUnits != latest.q.ReserveUnits {
+			changes = append(changes, "quantus.payments minPaymentUnits/reserveUnits (from the next payout run)")
+		}
+		queue.pending = reload
+		if reload.interval != latest.interval {
+			select {
+			case queue.intervals <- reload.interval:
+			default:
+			}
+		}
+		return changes
+	}, nil
 }
 
 func (e *Engine) PaymentStatus() (interface{}, error) {

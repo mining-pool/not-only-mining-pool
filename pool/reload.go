@@ -13,6 +13,7 @@ import (
 
 	"github.com/mining-pool/not-only-mining-pool/api"
 	"github.com/mining-pool/not-only-mining-pool/config"
+	"github.com/mining-pool/not-only-mining-pool/engine"
 )
 
 // reloadState remembers the configuration file as last applied (before any
@@ -64,10 +65,10 @@ func (p *Pool) LastReload() *api.ReloadReport {
 // difference.
 func restartOnly(o *config.Options) map[string]interface{} {
 	out := map[string]interface{}{
-		"disablePayment":         o.DisablePayment,
-		"coin":                   o.Coin,
-		"engine":                 o.Engine,
-		"quantus":                o.Quantus,
+		"disablePayment": o.DisablePayment,
+		"coin":           o.Coin,
+		"engine":         o.Engine,
+		"quantus (except payments.minPaymentUnits, reserveUnits)": quantusRestartOnly(o.Quantus),
 		"poolAddress":            o.PoolAddress,
 		"blockRefreshInterval":   o.BlockRefreshInterval,
 		"jobRebroadcastTimeout":  o.JobRebroadcastTimeout,
@@ -90,6 +91,18 @@ func restartOnly(o *config.Options) map[string]interface{} {
 		out["payment (except interval, minPayment, minConfirmations)"] = nil
 	}
 	return out
+}
+
+// quantusRestartOnly blanks the Quantus payout thresholds, which the engine
+// reloads itself.
+func quantusRestartOnly(q *config.QuantusOptions) *config.QuantusOptions {
+	if q == nil || q.Payments == nil {
+		return q
+	}
+	copied, payments := *q, *q.Payments
+	payments.MinPaymentUnits, payments.ReserveUnits = "", ""
+	copied.Payments = &payments
+	return &copied
 }
 
 func restartRequired(running, next *config.Options) []string {
@@ -115,18 +128,8 @@ func validateReloadable(next *config.Options, gbt bool) error {
 	if next.ConnectionTimeout < 0 {
 		return errors.New("connectionTimeout must not be negative")
 	}
-	var fees float64
-	for _, r := range next.RewardRecipients {
-		if r == nil || r.Percent < 0 {
-			return errors.New("rewardRecipients: percent must not be negative")
-		}
-		fees += r.Percent
-		if gbt && r.GetScript() == nil {
-			return fmt.Errorf("rewardRecipients: cannot build a script for %s (%s)", r.Address, r.Type)
-		}
-	}
-	if fees >= 100 {
-		return errors.New("rewardRecipients: total fee must be below 100%")
+	if err := config.ValidateRecipients(next.RewardRecipients, gbt); err != nil {
+		return err
 	}
 	if pay := next.PaymentOptions; pay != nil && (pay.Interval < 0 || pay.MinPayment < 0 || pay.MinConfirmations < 0) {
 		return errors.New("payment: interval, minPayment and minConfirmations must not be negative")
@@ -184,6 +187,13 @@ func (p *Pool) Reload(trigger string) api.ReloadReport {
 		ports.Abort()
 		return fail(err)
 	}
+	var engineApply func() []string
+	if r, ok := p.Engine.(engine.Reconfigurable); ok {
+		if engineApply, err = r.PrepareReload(next); err != nil {
+			ports.Abort()
+			return fail(err)
+		}
+	}
 
 	// Everything validated: apply.
 	current := p.Live.Get()
@@ -195,6 +205,9 @@ func (p *Pool) Reload(trigger string) api.ReloadReport {
 		report.Errors = append(report.Errors, e.Error())
 	}
 	report.Changes = append(report.Changes, apiChange.Commit()...)
+	if engineApply != nil {
+		report.Changes = append(report.Changes, engineApply()...)
+	}
 
 	if !reflect.DeepEqual(current.Banning, next.Banning) {
 		p.StratumServer.BanningManager.Update(next.Banning)
@@ -218,6 +231,7 @@ func (p *Pool) Reload(trigger string) api.ReloadReport {
 	applied.ConnectionTimeout = next.ConnectionTimeout
 	applied.TCPProxyProtocol = next.TCPProxyProtocol
 	applied.API = next.API
+	applied.Quantus = next.Quantus
 	if feesChanged {
 		applied.RewardRecipients = next.RewardRecipients
 	}
