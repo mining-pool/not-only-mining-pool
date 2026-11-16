@@ -1,12 +1,28 @@
 package config
 
-import "strconv"
+import (
+	"net"
+	"strconv"
+)
 
 type APIOptions struct {
-	Host string `json:"host"`
-	Port int    `json:"port"`
+	Host           string            `json:"host"`
+	Port           int               `json:"port"`
+	TLS            *TLSServerOptions `json:"tls,omitempty"`
+	Admin          *AdminOptions     `json:"admin,omitempty"`
+	AllowedOrigins []string          `json:"allowedOrigins,omitempty"`
 }
 
 func (api *APIOptions) Addr() string {
-	return api.Host + ":" + strconv.FormatInt(int64(api.Port), 10)
+	return net.JoinHostPort(api.Host, strconv.Itoa(api.Port))
+}
+
+type AdminOptions struct {
+	Username          string `json:"username"`
+	PasswordHashFile  string `json:"passwordHashFile"`
+	SessionTTLSeconds int    `json:"sessionTTLSeconds,omitempty"`
+	// Local development only: HTTP sessions require both a loopback peer and host.
+	AllowInsecureHTTP bool `json:"allowInsecureHTTP,omitempty"`
+	// "strict" (default) for same-site deployments; "none" requires HTTPS.
+	CookieSameSite string `json:"cookieSameSite,omitempty"`
 }

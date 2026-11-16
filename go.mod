@@ -22,6 +22,7 @@ require (
 	github.com/sencha-dev/powkit v0.4.3
 	github.com/sparkspay/go-neoscrypt v0.0.0-20190218120108-0a1ceb318941
 	golang.org/x/crypto v0.28.0
+	golang.org/x/term v0.25.0
 	lukechampine.com/blake3 v1.4.1
 )
 

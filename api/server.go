@@ -1,7 +1,10 @@
 package api
 
 import (
+	"crypto/tls"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -13,7 +16,6 @@ import (
 
 var log = logging.Logger("api")
 
-// TODO
 type Server struct {
 	*mux.Router
 
@@ -22,10 +24,38 @@ type Server struct {
 
 	availablePaths []string
 	config         map[string]interface{}
+	coinName       string
+	admin          *adminAuth
+	allowedOrigins map[string]bool
 }
 
 // NewAPIServer creates a Server which follows [standard api](https://github.com/mining-pool/mining-pool-api)
 func NewAPIServer(options *config.Options, storage *storage.DB) *Server {
+	s, err := NewServer(options, storage)
+	if err != nil {
+		log.Panic("API configuration: ", err)
+	}
+	return s
+}
+
+// NewServer validates API authentication, CORS and TLS before serving.
+func NewServer(options *config.Options, storage *storage.DB) (*Server, error) {
+	if options == nil || options.API == nil {
+		return nil, errors.New("api configuration is required")
+	}
+	origins, err := parseOrigins(options.API.AllowedOrigins)
+	if err != nil {
+		return nil, err
+	}
+	admin, err := newAdminAuth(options.API.Admin, origins)
+	if err != nil {
+		return nil, err
+	}
+	if options.API.TLS != nil {
+		if _, err := tls.LoadX509KeyPair(options.API.TLS.CertFile, options.API.TLS.KeyFile); err != nil {
+			return nil, fmt.Errorf("api TLS certificate: %w", err)
+		}
+	}
 	s := &Server{
 		Router: mux.NewRouter(),
 
@@ -34,6 +64,8 @@ func NewAPIServer(options *config.Options, storage *storage.DB) *Server {
 
 		availablePaths: make([]string, 0),
 		config:         make(map[string]interface{}),
+		admin:          admin,
+		allowedOrigins: origins,
 	}
 
 	s.ConvertConf(options)
@@ -49,20 +81,22 @@ func NewAPIServer(options *config.Options, storage *storage.DB) *Server {
 	s.RegisterFunc("/miner/{miner}/rig/{rig}", s.rigFunc)
 	s.Use(mux.CORSMethodMiddleware(s.Router))
 
-	http.Handle("/", s)
-
-	return s
+	return s, nil
 }
 
 func (s *Server) ConvertConf(options *config.Options) {
-	s.config["ports"] = options.Ports
+	s.config["ports"] = publicPorts(options.Ports)
 	s.config["algorithm"] = options.Algorithm
 	s.config["coin"] = options.Coin
-	s.config["api"] = options.API
+	if options.Coin != nil {
+		s.coinName = options.Coin.Name
+	}
+	// Never serialize APIOptions: it now contains private authentication settings.
+	s.config["api"] = map[string]interface{}{"host": options.API.Host, "port": options.API.Port}
 }
 
 func (s *Server) RegisterFunc(path string, fn func(http.ResponseWriter, *http.Request)) {
-	s.HandleFunc(path, fn)
+	s.HandleFunc(path, fn).Methods(http.MethodGet, http.MethodHead)
 	s.availablePaths = append(s.availablePaths, path)
 }
 
@@ -75,8 +109,20 @@ func (s *Server) RegisterPaymentStatus(status func() (interface{}, error)) {
 			http.Error(w, "payment status unavailable", http.StatusServiceUnavailable)
 			return
 		}
+		// Normalise through the shared contract so public callers only see
+		// their own address (?address=...), never the whole payout ledger.
+		var full paymentStatus
+		raw, err := json.Marshal(v)
+		if err == nil {
+			err = json.Unmarshal(raw, &full)
+		}
+		if err != nil {
+			log.Error("payment status: ", err)
+			http.Error(w, "payment status unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(v)
+		_ = json.NewEncoder(w).Encode(full.view(isAdmin(r), r.URL.Query().Get("address")))
 	})
 }
 
@@ -84,8 +130,19 @@ func (s *Server) Serve() {
 	addr := s.apiConf.Addr()
 	log.Warn("API server listening on ", addr)
 	go func() {
-		err := http.ListenAndServe(addr, nil)
-		if err != nil {
+		server := &http.Server{
+			Addr: addr, Handler: s, ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second,
+			IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 << 10,
+			TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+		}
+		var err error
+		if s.apiConf.TLS != nil {
+			err = server.ListenAndServeTLS(s.apiConf.TLS.CertFile, s.apiConf.TLS.KeyFile)
+		} else {
+			err = server.ListenAndServe()
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			panic(err)
 		}
 	}()
@@ -122,10 +179,12 @@ type PoolInfo struct {
 	Hashrate6H    float64 `json:"hashrate6h"`
 	Hashrate1D    float64 `json:"hashrate1d"`
 
-	Miners []string `json:"miners"`
+	MinerCount int `json:"minerCount"`
+	// Only returned to authenticated administrators.
+	Miners []string `json:"miners,omitempty"`
 }
 
-func (s *Server) poolFunc(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) poolFunc(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().Unix() // unit: sec
 
 	hs1M, err := s.storage.GetPoolHashrate(now-60, now)
@@ -155,6 +214,8 @@ func (s *Server) poolFunc(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	miner := PoolInfo{
+		CoinName: s.coinName,
+
 		Hashrate1Min:  hs1M,
 		Hashrate30Min: hs30M,
 		Hashrate1H:    hs1H,
@@ -164,7 +225,7 @@ func (s *Server) poolFunc(w http.ResponseWriter, _ *http.Request) {
 		Miners: miners,
 	}
 
-	raw, err := json.Marshal(&miner)
+	raw, err := json.Marshal(miner.view(isAdmin(r)))
 	if err != nil {
 		log.Error(err)
 	}

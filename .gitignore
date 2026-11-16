@@ -2,3 +2,4 @@
 config.json
 *.log
 node_modules/
+admin-password.hash
