@@ -153,7 +153,7 @@ kill -HUP "$(pidof nomp)"
 systemctl reload nomp
 ```
 
-重载要么全部生效，要么全部不生效。会先解析并校验新文件：加载证书、绑定新端口、检查管理员密码哈希和收款地址。任何一步失败，或文件修改了必须重启的配置，都不会应用任何改动，矿池照常运行。结果会写入日志并显示在网页后台（`GET /admin-api/reload` 返回上次结果）。
+重载要么全部生效，要么全部不生效。会先解析并校验新文件：加载证书、绑定新端口、检查管理员密码哈希和收款地址，各挖矿引擎还会用与启动时相同的规则校验自己的配置。任何一步失败，或文件修改了必须重启的配置，都不会应用任何改动，矿池照常运行。结果会写入日志并显示在网页后台（`GET /admin-api/reload` 返回上次结果）。
 
 | 配置 | 生效方式 |
 | --- | --- |
@@ -164,13 +164,14 @@ systemctl reload nomp
 | `ports`：开关 TLS 或修改 `protocol` | 重新绑定端口，该端口上的连接会断开 |
 | `banning`（含开启 / 关闭） | 立即生效 |
 | `connectionTimeout`、`tcpProxyProtocol` | 下次检查 / 新连接生效 |
-| `rewardRecipients` | 下一个挖矿任务开始生效（GBT 币种） |
+| `rewardRecipients` | 下一个挖矿任务（GBT 币种、kawpow）或下一轮结算（quantus）开始生效。其他引擎的 coinbase 由节点构建，手续费收款方对它们不适用 |
 | `payment.interval`、`minPayment`、`minConfirmations` | 下一轮结算开始生效，绝不改动进行中的结算 |
+| `quantus.payments.minPaymentUnits`、`reserveUnits` | 下一轮结算开始生效（仍会检查不低于链上最小存款） |
 | `api.allowedOrigins`、`api.hashesPerDifficulty` | 立即生效 |
 | `api.admin` | 立即生效，所有管理员会话退出登录 |
 | `api.tls` 证书续期或更换路径 | 新握手生效 |
 
-以下配置必须重启，修改后重载会失败：`coin`、`engine`、`algorithm`、`daemons`、`p2p`、`storage`、`poolAddress`、`quantus`、`disablePayment`、`blockRefreshInterval`、`jobRebroadcastTimeout`、`emitInvalidBlockHashes`、`api.host`、`api.port`、开启或关闭 `api.tls`，以及 `payment` 中除上述三项外的所有字段（结算模式和记账参数保持不变，保证同一账本不会混用规则）。
+以下配置必须重启，修改后重载会失败：`coin`、`engine`、`algorithm`、`daemons`、`p2p`、`storage`、`poolAddress`、`quantus` 的其余字段、`disablePayment`、`blockRefreshInterval`、`jobRebroadcastTimeout`、`emitInvalidBlockHashes`、`api.host`、`api.port`、开启或关闭 `api.tls`，以及 `payment` 中除上述三项外的所有字段（结算模式和记账参数保持不变，保证同一账本不会混用规则）。
 
 ## 生产部署
 

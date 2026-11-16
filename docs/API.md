@@ -201,7 +201,8 @@ systemctl reload nomp
 
 A reload is all-or-nothing. The new file is parsed and validated first —
 certificates are loaded, new ports are bound, the administrator hash and
-reward addresses are checked. If anything fails, or the file changes a setting
+reward addresses are checked, and each mining engine validates its own
+settings with the same rules it uses at startup. If anything fails, or the file changes a setting
 that needs a restart, nothing is applied and the pool keeps running as before.
 The outcome is logged and shown in the portal (`GET /admin-api/reload` returns
 the last result).
@@ -215,14 +216,15 @@ the last result).
 | `ports`: TLS switched on/off, or `protocol` changed | The port is rebound and its connections dropped |
 | `banning` (including enabling/disabling) | Immediately |
 | `connectionTimeout`, `tcpProxyProtocol` | Next check / new connections |
-| `rewardRecipients` | From the next job (GBT coins) |
+| `rewardRecipients` | From the next job (GBT coins, kawpow) or the next payout run (quantus). Other engines' nodes build the coinbase, so fee recipients do not apply to them |
 | `payment.interval`, `minPayment`, `minConfirmations` | From the next payout run; a run in progress is never changed |
+| `quantus.payments.minPaymentUnits`, `reserveUnits` | From the next payout run (still checked against the chain's existential deposit) |
 | `api.allowedOrigins`, `api.hashesPerDifficulty` | Immediately |
 | `api.admin` | Immediately; every administrator session is signed out |
 | `api.tls` certificate renewed or paths changed | New handshakes |
 
 These need a restart and make a reload fail: `coin`, `engine`, `algorithm`,
-`daemons`, `p2p`, `storage`, `poolAddress`, `quantus`, `disablePayment`,
+`daemons`, `p2p`, `storage`, `poolAddress`, the rest of `quantus`, `disablePayment`,
 `blockRefreshInterval`, `jobRebroadcastTimeout`, `emitInvalidBlockHashes`,
 `api.host`, `api.port`, enabling or disabling `api.tls`, and every `payment`
 field other than the three above (the pay mode and accounting parameters stay
