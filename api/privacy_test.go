@@ -108,7 +108,7 @@ func TestAdminPaymentsAndPoolKeepFullData(t *testing.T) {
 
 func TestPortsConfigHidesTLSFiles(t *testing.T) {
 	s := testServer(t)
-	s.ConvertConf(&config.Options{API: s.apiConf, Ports: map[int]*config.PortOptions{
+	s.ConvertConf(&config.Options{API: s.apiConfig(), Ports: map[int]*config.PortOptions{
 		3333: {Diff: 8},
 		4444: {Protocol: "stratum", Diff: 16, TLS: &config.TLSServerOptions{CertFile: "/srv/tls/cert.pem", KeyFile: "/srv/tls/key.pem"}},
 	}})

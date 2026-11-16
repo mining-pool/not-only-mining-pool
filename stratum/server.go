@@ -2,10 +2,8 @@ package stratum
 
 import (
 	"bytes"
-	"crypto/tls"
 	"encoding/binary"
 	"net"
-	"strconv"
 	"sync"
 	"time"
 
@@ -23,8 +21,11 @@ import (
 var log = logging.Logger("stratum")
 
 type Server struct {
-	Options  *config.Options
-	Listener net.Listener
+	// Options is the configuration the server started with; Live (when set)
+	// holds the current one after reloads.
+	Options *config.Options
+	Live    *config.Live
+	portState
 
 	DaemonManager       *daemons.DaemonManager
 	VarDiff             *vardiff.VarDiff
@@ -55,35 +56,9 @@ func NewStratumServer(options *config.Options, jm *jobs.JobManager, bm *bans.Ban
 }
 
 func (ss *Server) Init() (portStarted []int) {
-	var listeners []net.Listener
-	if ss.Options.Banning != nil {
-		ss.BanningManager.Init()
-	}
+	ss.BanningManager.Init()
 
-	for port, options := range ss.Options.Ports {
-		var err error
-		if provider, ok := ss.Engine.(interface {
-			Listen(int, *config.PortOptions) (net.Listener, error)
-		}); ok {
-			ss.Listener, err = provider.Listen(port, options)
-		} else if options.TLS != nil {
-			ss.Listener, err = tls.Listen("tcp", ":"+strconv.Itoa(port), options.TLS.ToTLSConfig())
-		} else {
-			ss.Listener, err = net.Listen("tcp", ":"+strconv.Itoa(port))
-		}
-
-		if err != nil {
-			log.Error(err)
-			continue
-		}
-
-		portStarted = append(portStarted, port)
-		listeners = append(listeners, ss.Listener)
-		//if len(portStarted) == len(ss.Options.Ports) {
-		//	// emit started
-		//}
-	}
-
+	portStarted = ss.startPorts(ss.Options.Ports)
 	if len(portStarted) == 0 {
 		log.Panic("No port listened")
 	}
@@ -116,36 +91,28 @@ func (ss *Server) Init() (portStarted []int) {
 		}()
 	}
 
-	for _, listener := range listeners {
-		go func(listener net.Listener) {
-			for {
-				conn, err := listener.Accept()
-				if err != nil {
-					log.Error(err)
-					return
-				}
-
-				if conn != nil {
-					log.Info("new conn from ", conn.RemoteAddr().String())
-					go ss.HandleNewClient(conn)
-				}
-			}
-		}(listener)
-	}
-
 	return portStarted
 }
 
 // HandleNewClient converts the conn to an underlying client instance and finally return its unique subscriptionID
 func (ss *Server) HandleNewClient(socket net.Conn) []byte {
+	port := socket.LocalAddr().(*net.TCPAddr).Port
+	return ss.handleNewClient(socket, port, ss.portOptions(port))
+}
+
+// handleNewClient registers a connection accepted on port with the port
+// settings in force at that moment.
+func (ss *Server) handleNewClient(socket net.Conn, port int, portOpts *config.PortOptions) []byte {
 	subscriptionID := ss.SubscriptionCounter.Next()
 	client := NewStratumClient(subscriptionID, socket, ss.Options, ss.JobManager, ss.BanningManager)
+	client.Live = ss.Live
+	client.Port = port
+	client.setPortOptions(portOpts)
 	client.Engine = ss.Engine
 	if provider, ok := ss.Engine.(interface {
 		ClientEngine(int, *config.PortOptions) engine.Engine
 	}); ok {
-		port := socket.LocalAddr().(*net.TCPAddr).Port
-		client.Engine = provider.ClientEngine(port, ss.Options.Ports[port])
+		client.Engine = provider.ClientEngine(port, portOpts)
 	}
 	client.DB = ss.DB
 	ss.clientsMu.Lock()

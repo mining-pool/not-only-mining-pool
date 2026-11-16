@@ -133,7 +133,7 @@ type boundEngine struct {
 	listeners map[int]net.Listener
 }
 
-func (e *boundEngine) Listen(port int, _ *config.PortOptions) (net.Listener, error) {
+func (e *boundEngine) Listen(port int, _ *config.PortOptions, _ func(*tls.ClientHelloInfo) (*tls.Certificate, error)) (net.Listener, error) {
 	return e.listeners[port], nil
 }
 func (e *boundEngine) Watch(func()) error { return nil }
@@ -150,12 +150,12 @@ func TestQUICAndStratumPortsTogether(t *testing.T) {
 			if useTLS {
 				sp.TLS = serverTLS
 			}
-			ql, err := e.Listen(0, qp)
+			ql, err := e.Listen(0, qp, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer ql.Close()
-			sl, err := e.Listen(0, sp)
+			sl, err := e.Listen(0, sp, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -275,3 +275,10 @@ func TestTransportConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The stratum server finds custom listeners through an optional interface; a
+// signature drift would silently fall back to plain TCP, so pin it here.
+var (
+	_ stratum.ListenProvider = (*Engine)(nil)
+	_ stratum.ListenProvider = (*boundEngine)(nil)
+)

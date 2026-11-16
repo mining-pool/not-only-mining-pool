@@ -1,13 +1,13 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/mining-pool/not-only-mining-pool/config"
 	"github.com/mining-pool/not-only-mining-pool/pool"
 	"github.com/mining-pool/not-only-mining-pool/utils"
 	"golang.org/x/crypto/bcrypt"
@@ -40,17 +40,14 @@ func main() {
 	}
 	logging.SetAllLoggers(lvl)
 
-	var conf config.Options
 	if !utils.FileExists(*configFileName) {
 		log.Panic("the config file " + *configFileName + " does not exist")
 	}
-
-	f, err := os.Open(*configFileName)
+	raw, err := os.ReadFile(*configFileName)
 	if err != nil {
 		log.Panic(err)
 	}
-
-	err = json.NewDecoder(f).Decode(&conf)
+	conf, err := pool.DecodeConfig(raw)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -59,13 +56,21 @@ func main() {
 	if conf.Engine != "" && conf.Engine != "gbt" {
 		// pluggable engines register themselves via build-tagged imports
 		// (see engines_*.go); e.g. `go build -tags ethash` for ETC.
-		p = pool.NewEnginePool(&conf)
+		p = pool.NewEnginePool(conf)
 	} else {
-		p = pool.NewPool(&conf)
+		p = pool.NewPool(conf)
 	}
 	p.Init()
-	for {
-		select {}
+	if err := p.EnableReload(*configFileName, raw); err != nil {
+		log.Panic(err)
+	}
+
+	// SIGHUP re-reads the configuration file and applies what can change at
+	// runtime (ports, banning, fees, payout thresholds, API access settings).
+	reload := make(chan os.Signal, 1)
+	signal.Notify(reload, syscall.SIGHUP)
+	for range reload {
+		p.Reload("signal")
 	}
 }
 

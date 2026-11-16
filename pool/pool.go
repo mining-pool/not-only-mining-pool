@@ -50,6 +50,10 @@ type Pool struct {
 	// Engine is set for non-GBT mining models (e.g. ethash). When set, Init
 	// skips the entire Bitcoin daemon/jobmanager/payments machinery.
 	Engine engine.Engine
+
+	// Live is the configuration currently in force; Reload replaces it.
+	Live   *config.Live
+	reload reloadState
 }
 
 // NewEnginePool builds a pool driven by a pluggable engine.Engine (e.g. ethash)
@@ -72,7 +76,9 @@ func NewEnginePool(options *config.Options) *Pool {
 	rate := eng.Hashrate()
 	apiServer.SetHashrate(rate.PerDiff, rate.Unit)
 
+	live := config.NewLive(options)
 	ss := stratum.NewStratumServer(options, nil, bm)
+	ss.Live = live
 	ss.Engine = eng
 	ss.DB = db // engine-mode share persistence (stats/accounting)
 
@@ -101,6 +107,7 @@ func NewEnginePool(options *config.Options) *Pool {
 
 	return &Pool{
 		Options:        options,
+		Live:           live,
 		Engine:         eng,
 		APIServer:      apiServer,
 		StratumServer:  ss,
@@ -165,8 +172,12 @@ func NewPool(options *config.Options) *Pool {
 
 	db := storage.NewStorage(options.Coin.Name, options.Storage)
 
+	live := config.NewLive(options)
 	jm := jobs.NewJobManager(options, dm, db)
+	jm.Live = live
 	bm := bans.NewBanningManager(options.Banning)
+	ss := stratum.NewStratumServer(options, jm, bm)
+	ss.Live = live
 	s := api.NewAPIServer(options, db)
 	s.SetHashrate(gbtHashesPerDiff(options.Algorithm.Multiplier), "H/s")
 	pm := payments.NewPaymentManager(options.PaymentOptions, options.PoolAddress, dm, db)
@@ -178,7 +189,8 @@ func NewPool(options *config.Options) *Pool {
 		APIServer:      s,
 		PaymentManager: pm,
 
-		StratumServer: stratum.NewStratumServer(options, jm, bm),
+		StratumServer: ss,
+		Live:          live,
 		Magnitude:     uint64(magnitude),
 		CoinPrecision: len(strconv.FormatUint(uint64(magnitude), 10)) - 1,
 		Stats:         NewStats(),

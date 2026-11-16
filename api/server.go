@@ -18,20 +18,17 @@ var log = logging.Logger("api")
 
 type Server struct {
 	*mux.Router
+	adminRouter *mux.Router
 
-	apiConf *config.APIOptions
 	storage *storage.DB
 
 	availablePaths []string
-	config         map[string]interface{}
 	coinName       string
 
-	// Shares are stored as difficulty; rates are reported as hashPerDiff ×
-	// difficulty per second in hashUnit.
-	hashPerDiff    float64
-	hashUnit       string
-	admin          *adminAuth
-	allowedOrigins map[string]bool
+	// Settings a configuration reload can replace (see reload.go). Shares
+	// are stored as difficulty; rates are reported as rate.perDiff ×
+	// difficulty per second in rate.unit.
+	reloadState
 }
 
 // NewAPIServer creates a Server which follows [standard api](https://github.com/mining-pool/mining-pool-api)
@@ -52,30 +49,38 @@ func NewServer(options *config.Options, storage *storage.DB) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	admin, err := newAdminAuth(options.API.Admin, origins)
+	originSet := newOriginSet(origins)
+	admin, err := newAdminAuth(options.API.Admin, originSet)
 	if err != nil {
 		return nil, err
 	}
+	var certs *config.CertificateHolder
 	if options.API.TLS != nil {
-		if _, err := tls.LoadX509KeyPair(options.API.TLS.CertFile, options.API.TLS.KeyFile); err != nil {
+		if certs, err = config.NewCertificateHolder(options.API.TLS); err != nil {
 			return nil, fmt.Errorf("api TLS certificate: %w", err)
 		}
 	}
 	s := &Server{
-		Router: mux.NewRouter(),
-
-		apiConf: options.API,
+		Router:  mux.NewRouter(),
 		storage: storage,
 
 		availablePaths: make([]string, 0),
-		config:         make(map[string]interface{}),
-		admin:          admin,
-		allowedOrigins: origins,
-		hashPerDiff:    1,
-		hashUnit:       "H/s",
 	}
+	s.origins = originSet
+	s.adminPtr.Store(admin)
+	s.adminOpts = options.API.Admin
+	s.apiConf.Store(options.API)
+	s.certs = certs
+	s.basePerDiff, s.baseUnit = 1, "H/s"
+	s.applyHashrate()
 
 	s.ConvertConf(options)
+
+	// Admin-only routes; everything else falls through to the public API.
+	s.adminRouter = mux.NewRouter()
+	s.adminRouter.HandleFunc("/reload", s.reloadFunc).Methods(http.MethodGet, http.MethodHead, http.MethodPost)
+	s.adminRouter.NotFoundHandler = s.Router
+	s.adminRouter.MethodNotAllowedHandler = s.Router
 
 	s.RegisterFunc("/", s.indexFunc)
 
@@ -92,35 +97,34 @@ func NewServer(options *config.Options, storage *storage.DB) (*Server, error) {
 }
 
 func (s *Server) ConvertConf(options *config.Options) {
-	s.config["ports"] = publicPorts(options.Ports)
-	s.config["algorithm"] = options.Algorithm
-	s.config["coin"] = options.Coin
+	conf := map[string]interface{}{
+		"ports":     publicPorts(options.Ports),
+		"algorithm": options.Algorithm,
+		"coin":      options.Coin,
+		// Never serialize APIOptions: it contains private authentication settings.
+		"api": map[string]interface{}{"host": options.API.Host, "port": options.API.Port},
+	}
 	if options.Coin != nil {
 		s.coinName = options.Coin.Name
 	}
-	// Never serialize APIOptions: it now contains private authentication settings.
-	s.config["api"] = map[string]interface{}{"host": options.API.Host, "port": options.API.Port}
+	s.conf.Store(&conf)
 }
 
 // SetHashrate sets how much work one unit of share difficulty represents (see
 // engine.HashrateUnit). api.hashesPerDifficulty in the config takes precedence.
 func (s *Server) SetHashrate(perDiff float64, unit string) {
-	if s.apiConf.HashesPerDifficulty > 0 {
-		perDiff = s.apiConf.HashesPerDifficulty
-	}
-	if perDiff > 0 {
-		s.hashPerDiff = perDiff
-	}
-	if unit != "" {
-		s.hashUnit = unit
-	}
+	s.basePerDiff, s.baseUnit = perDiff, unit
+	s.applyHashrate()
 }
 
-// rates converts difficulty-per-second windows into hashrates.
-func (s *Server) rates(v ...*float64) {
+// rates converts difficulty-per-second windows into hashrates and returns the
+// unit they are in.
+func (s *Server) rates(v ...*float64) string {
+	h := s.rate.Load()
 	for _, p := range v {
-		*p *= s.hashPerDiff
+		*p *= h.perDiff
 	}
+	return h.unit
 }
 
 func (s *Server) RegisterFunc(path string, fn func(http.ResponseWriter, *http.Request)) {
@@ -155,7 +159,8 @@ func (s *Server) RegisterPaymentStatus(status func() (interface{}, error)) {
 }
 
 func (s *Server) Serve() {
-	addr := s.apiConf.Addr()
+	conf := s.apiConfig()
+	addr := conf.Addr()
 	log.Warn("API server listening on ", addr)
 	go func() {
 		server := &http.Server{
@@ -165,8 +170,11 @@ func (s *Server) Serve() {
 			TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12},
 		}
 		var err error
-		if s.apiConf.TLS != nil {
-			err = server.ListenAndServeTLS(s.apiConf.TLS.CertFile, s.apiConf.TLS.KeyFile)
+		if s.certs != nil {
+			// The certificate is served from a holder so a reload can swap in a
+			// renewed one without restarting the listener.
+			server.TLSConfig.GetCertificate = s.certs.GetCertificate
+			err = server.ListenAndServeTLS("", "")
 		} else {
 			err = server.ListenAndServe()
 		}
@@ -183,7 +191,7 @@ func (s *Server) indexFunc(writer http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) configIndexFunc(writer http.ResponseWriter, _ *http.Request) {
 	keys := make([]string, 0)
-	for k := range s.config {
+	for k := range s.publicConfig() {
 		keys = append(keys, "/config/"+k)
 	}
 
@@ -194,7 +202,7 @@ func (s *Server) configIndexFunc(writer http.ResponseWriter, _ *http.Request) {
 func (s *Server) configFunc(writer http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 
-	raw, _ := json.Marshal(s.config[vars["key"]])
+	raw, _ := json.Marshal(s.publicConfig()[vars["key"]])
 	_, _ = writer.Write(raw)
 }
 
@@ -242,10 +250,10 @@ func (s *Server) poolFunc(w http.ResponseWriter, r *http.Request) {
 		log.Error(err)
 	}
 
-	s.rates(&hs1M, &hs30M, &hs1H, &hs6H, &hs1D)
+	unit := s.rates(&hs1M, &hs30M, &hs1H, &hs6H, &hs1D)
 	miner := PoolInfo{
 		CoinName:     s.coinName,
-		HashrateUnit: s.hashUnit,
+		HashrateUnit: unit,
 
 		Hashrate1Min:  hs1M,
 		Hashrate30Min: hs30M,
@@ -315,10 +323,10 @@ func (s *Server) minerFunc(w http.ResponseWriter, r *http.Request) {
 		log.Error(err)
 	}
 
-	s.rates(&hs1M, &hs30M, &hs1H, &hs6H, &hs1D)
+	unit := s.rates(&hs1M, &hs30M, &hs1H, &hs6H, &hs1D)
 	miner := MinerInfo{
 		Name:         minerName,
-		HashrateUnit: s.hashUnit,
+		HashrateUnit: unit,
 
 		Hashrate1Min:  hs1M,
 		Hashrate30Min: hs30M,
@@ -377,11 +385,11 @@ func (s *Server) rigFunc(w http.ResponseWriter, r *http.Request) {
 		log.Error(err)
 	}
 
-	s.rates(&hs1M, &hs30M, &hs1H, &hs6H, &hs1D)
+	unit := s.rates(&hs1M, &hs30M, &hs1H, &hs6H, &hs1D)
 	miner := RigInfo{
 		Name:         rigName,
 		MinerName:    minerName,
-		HashrateUnit: s.hashUnit,
+		HashrateUnit: unit,
 
 		Hashrate1Min:  hs1M,
 		Hashrate30Min: hs30M,

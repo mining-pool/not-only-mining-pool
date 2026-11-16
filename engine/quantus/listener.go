@@ -19,26 +19,35 @@ import (
 
 // Listen adapts the official miner's framed QUIC messages to the shared
 // Stratum client lifecycle, authorization, share accounting and banning.
-func (e *Engine) Listen(port int, opts *config.PortOptions) (net.Listener, error) {
+// getCert serves the port's current certificate (the stratum server swaps it on
+// configuration reloads); when nil the configured files are loaded once.
+func (e *Engine) Listen(port int, opts *config.PortOptions, getCert func(*tls.ClientHelloInfo) (*tls.Certificate, error)) (net.Listener, error) {
 	if err := validatePort(opts); err != nil {
 		return nil, err
 	}
-	if opts.Protocol == "stratum" {
-		return e.listenStratum(port, opts)
+	if getCert == nil && opts.TLS != nil {
+		holder, err := config.NewCertificateHolder(opts.TLS)
+		if err != nil {
+			return nil, err
+		}
+		getCert = holder.GetCertificate
 	}
-	if opts == nil || opts.TLS == nil {
+	if opts.Protocol == "stratum" {
+		return e.listenStratum(port, opts, getCert)
+	}
+	if getCert == nil {
 		return nil, errors.New("quantus: pool TLS required")
 	}
-	cert, err := tls.LoadX509KeyPair(opts.TLS.CertFile, opts.TLS.KeyFile)
-	if err != nil {
-		return nil, err
-	}
-	l, err := quic.ListenAddr(net.JoinHostPort("", strconv.Itoa(port)), &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{cert}, NextProtos: []string{alpn}}, &quic.Config{KeepAlivePeriod: 5 * time.Second, MaxIdleTimeout: 60 * time.Second, MaxIncomingStreams: 1, MaxIncomingUniStreams: -1})
+	l, err := quic.ListenAddr(net.JoinHostPort("", strconv.Itoa(port)), &tls.Config{MinVersion: tls.VersionTLS13, GetCertificate: getCert, NextProtos: []string{alpn}}, &quic.Config{KeepAlivePeriod: 5 * time.Second, MaxIdleTimeout: 60 * time.Second, MaxIncomingStreams: 1, MaxIncomingUniStreams: -1})
 	if err != nil {
 		return nil, err
 	}
 	return &minerListener{Listener: l, engine: e}, nil
 }
+
+// ValidatePort lets the stratum server check port settings before a
+// configuration reload applies them.
+func (e *Engine) ValidatePort(opts *config.PortOptions) error { return validatePort(opts) }
 
 type minerListener struct {
 	*quic.Listener

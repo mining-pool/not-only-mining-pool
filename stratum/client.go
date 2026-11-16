@@ -28,7 +28,13 @@ import (
 type Client struct {
 	SubscriptionId []byte
 	Options        *config.Options
-	RemoteAddress  net.Addr
+	// Live, when set, holds the current configuration after reloads.
+	Live          *config.Live
+	RemoteAddress net.Addr
+	// Port and PortOptions are captured when the connection is accepted, so a
+	// reload never changes (or removes) settings under a connected miner.
+	Port        int
+	PortOptions *config.PortOptions
 
 	Socket      net.Conn
 	SocketBufIO *bufio.ReadWriter
@@ -66,10 +72,7 @@ type Client struct {
 }
 
 func NewStratumClient(subscriptionId []byte, socket net.Conn, options *config.Options, jm *jobs.JobManager, bm *bans.BanningManager) *Client {
-	var varDiff *vardiff.VarDiff
-	if options.Ports[socket.LocalAddr().(*net.TCPAddr).Port] != nil && options.Ports[socket.LocalAddr().(*net.TCPAddr).Port].VarDiff != nil {
-		varDiff = vardiff.NewVarDiff(options.Ports[socket.LocalAddr().(*net.TCPAddr).Port].VarDiff)
-	}
+	port := socket.LocalAddr().(*net.TCPAddr).Port
 
 	// The Bitcoin/GBT path assigns the extranonce here; engine mode (jm == nil)
 	// assigns it later in the engine's OnSubscribe.
@@ -78,7 +81,7 @@ func NewStratumClient(subscriptionId []byte, socket net.Conn, options *config.Op
 		extraNonce1 = jm.ExtraNonce1Generator.GetExtraNonce1()
 	}
 
-	return &Client{
+	client := &Client{
 		SubscriptionId:    subscriptionId,
 		PendingDifficulty: big.NewFloat(0),
 		Options:           options,
@@ -94,34 +97,65 @@ func NewStratumClient(subscriptionId []byte, socket net.Conn, options *config.Op
 		SubscriptionBeforeAuth: false,
 		ExtraNonce1:            extraNonce1,
 
-		VarDiff:           varDiff,
+		Port:              port,
 		JobManager:        jm,
 		BanningManager:    bm,
 		SocketClosedEvent: make(chan struct{}),
+	}
+	if options != nil {
+		client.setPortOptions(options.Ports[port])
+	}
+	return client
+}
+
+// options returns the configuration currently in force.
+func (sc *Client) options() *config.Options {
+	if sc.Live != nil {
+		return sc.Live.Get()
+	}
+	return sc.Options
+}
+
+// localPort is the port the miner connected to.
+func (sc *Client) localPort() int {
+	if sc.Port != 0 {
+		return sc.Port
+	}
+	if a, ok := sc.Socket.LocalAddr().(*net.TCPAddr); ok {
+		return a.Port
+	}
+	return 0
+}
+
+// setPortOptions records the port settings this connection uses.
+func (sc *Client) setPortOptions(p *config.PortOptions) {
+	sc.PortOptions = p
+	sc.VarDiff = nil
+	if p != nil && p.VarDiff != nil {
+		sc.VarDiff = vardiff.NewVarDiff(p.VarDiff)
 	}
 }
 
 func (sc *Client) ShouldBan(shareValid bool) bool {
 	if shareValid {
 		sc.Shares.Valid++
-	} else {
-		sc.Shares.Invalid++
-		if sc.Shares.TotalShares() >= sc.Options.Banning.CheckThreshold {
-			if sc.Shares.BadPercent() < sc.Options.Banning.InvalidPercent {
-				sc.Shares.Reset()
-			} else {
-				// sc.TriggerBanEvent <- strconv.FormatUint(sc.Shares.Invalid, 10) + " out of the last " + strconv.FormatUint(sc.Shares.TotalShares(), 10) + " shares were invalid"
-				log.Info(strconv.FormatUint(sc.Shares.Invalid, 10) + " out of the last " + strconv.FormatUint(sc.Shares.TotalShares(), 10) + " shares were invalid")
-				sc.BanningManager.AddBannedIP(sc.RemoteAddress.String())
-				log.Warn("closed socket", sc.WorkerName, " due to shares bad percent reached the banning invalid percent threshold")
-				sc.closeSocket()
-				_ = sc.Socket.Close()
-				return true
-			}
-		}
+		return false
 	}
-
-	return false
+	sc.Shares.Invalid++
+	banning := sc.BanningManager.Options()
+	if banning == nil || sc.Shares.TotalShares() < banning.CheckThreshold {
+		return false
+	}
+	if sc.Shares.BadPercent() < banning.InvalidPercent {
+		sc.Shares.Reset()
+		return false
+	}
+	log.Info(strconv.FormatUint(sc.Shares.Invalid, 10) + " out of the last " + strconv.FormatUint(sc.Shares.TotalShares(), 10) + " shares were invalid")
+	sc.BanningManager.AddBannedIP(sc.RemoteAddress.String())
+	log.Warn("closed socket", sc.WorkerName, " due to shares bad percent reached the banning invalid percent threshold")
+	sc.closeSocket()
+	_ = sc.Socket.Close()
+	return true
 }
 
 func (sc *Client) Init() {
@@ -206,7 +240,7 @@ func (sc *Client) HandleAuthorize(message *daemons.JsonRpcRequest, replyToSocket
 	sc.WorkerName = utils.RawJsonToString(authParams[0])
 	sc.WorkerPass = utils.RawJsonToString(authParams[1])
 
-	authorized, disconnect, err := sc.AuthorizeFn(sc.RemoteAddress, sc.Socket.LocalAddr().(*net.TCPAddr).Port, sc.WorkerName, sc.WorkerPass)
+	authorized, disconnect, err := sc.AuthorizeFn(sc.RemoteAddress, sc.localPort(), sc.WorkerName, sc.WorkerPass)
 	sc.IsAuthorized = err == nil && authorized
 
 	if replyToSocket {
@@ -235,8 +269,8 @@ func (sc *Client) HandleAuthorize(message *daemons.JsonRpcRequest, replyToSocket
 	}
 
 	// the init Diff for miners
-	log.Info("sending init difficulty: ", sc.Options.Ports[sc.Socket.LocalAddr().(*net.TCPAddr).Port].Diff)
-	sc.SendDifficulty(big.NewFloat(sc.Options.Ports[sc.Socket.LocalAddr().(*net.TCPAddr).Port].Diff))
+	log.Info("sending init difficulty: ", sc.portDefaultDiff())
+	sc.SendDifficulty(big.NewFloat(sc.portDefaultDiff()))
 	sc.SendMiningJob(sc.JobManager.CurrentJob.GetJobParams(true))
 }
 
@@ -446,7 +480,7 @@ func (sc *Client) SetupSocket() {
 				var message daemons.JsonRpcRequest
 				err = json.Unmarshal(raw, &message)
 				if err != nil {
-					if !sc.Options.TCPProxyProtocol {
+					if !sc.options().TCPProxyProtocol {
 						log.Error("Malformed message from", sc.GetLabel(), ":", string(raw))
 						_ = sc.Socket.Close()
 						sc.closeSocket()
@@ -455,7 +489,7 @@ func (sc *Client) SetupSocket() {
 					return
 				}
 
-				if once && sc.Options.TCPProxyProtocol {
+				if once && sc.options().TCPProxyProtocol {
 					once = false
 					if bytes.HasPrefix(raw, []byte("PROXY")) {
 						sc.RemoteAddress, err = net.ResolveTCPAddr("tcp", string(bytes.Split(raw, []byte(" "))[2]))
@@ -517,7 +551,7 @@ func (sc *Client) SendMiningJob(jobParams []interface{}) {
 	log.Info("sending job: ", string(utils.Jsonify(jobParams)))
 
 	lastActivityAgo := time.Since(sc.LastActivity)
-	if lastActivityAgo > time.Duration(sc.Options.ConnectionTimeout)*time.Second {
+	if lastActivityAgo > time.Duration(sc.options().ConnectionTimeout)*time.Second {
 		log.Info("closed socket", sc.WorkerName, "due to activity timeout")
 		_ = sc.Socket.Close()
 		sc.closeSocket()

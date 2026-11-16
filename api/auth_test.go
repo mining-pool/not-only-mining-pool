@@ -118,11 +118,11 @@ func TestAdminSessionLifecycle(t *testing.T) {
 		t.Fatal("logout did not revoke")
 	}
 	cookie, _ = login(t, s, nil)
-	s.admin.now = func() time.Time { return time.Now().Add(2 * time.Minute) }
+	s.admin().now = func() time.Time { return time.Now().Add(2 * time.Minute) }
 	if w := call(s, "GET", "/admin-api/probe", "", cookie, ""); w.Code != 401 {
 		t.Fatal("expired session accepted")
 	}
-	if len(s.admin.sessions) != 0 {
+	if len(s.admin().sessions) != 0 {
 		t.Fatal("expired session not removed")
 	}
 }
@@ -165,7 +165,7 @@ func TestAdminOriginTransportAndMethods(t *testing.T) {
 		{"pool.test", "127.0.0.1:1234", true, 403},
 		{"localhost:20000", "192.0.2.1:1234", true, 403},
 	} {
-		s.admin.localHTTP = tc.local
+		s.admin().localHTTP = tc.local
 		r := httptest.NewRequest("GET", "http://"+tc.host+"/admin-api/auth/session", nil)
 		r.RemoteAddr = tc.remote
 		r.Header.Set("X-Forwarded-Proto", "https")
@@ -193,7 +193,7 @@ func TestAdminInvalidInputAndLoginLimits(t *testing.T) {
 	if w.Code != 429 || w.Header().Get("Retry-After") == "" {
 		t.Fatal("login not throttled")
 	}
-	s.admin.now = func() time.Time { return time.Now().Add(6 * time.Minute) }
+	s.admin().now = func() time.Time { return time.Now().Add(6 * time.Minute) }
 	if w := call(s, "POST", "/admin-api/auth/login", `{}`, nil, ""); w.Code != 400 {
 		t.Fatal("rate limit did not expire")
 	}
@@ -211,7 +211,7 @@ func TestAdminDisabledAndConfigurationRedaction(t *testing.T) {
 			t.Fatalf("private configuration leaked: %s", w.Body.String())
 		}
 	}
-	s.admin = nil
+	s.adminPtr.Store(nil)
 	if w := call(s, "GET", "/admin-api/probe", "", nil, ""); w.Code != 503 {
 		t.Fatal("disabled admin allowed access")
 	}

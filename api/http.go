@@ -39,7 +39,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Add("Vary", "Origin")
 	if origin := r.Header.Get("Origin"); origin != "" {
-		if !allowedOrigin(r, s.allowedOrigins) {
+		if !allowedOrigin(r, s.origins.get()) {
 			apiError(w, http.StatusForbidden, "origin_mismatch", "Request origin is not allowed.")
 			return
 		}
@@ -47,7 +47,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 	}
 	if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
-		if r.Header.Get("Origin") == "" || !allowedOrigin(r, s.allowedOrigins) {
+		if r.Header.Get("Origin") == "" || !allowedOrigin(r, s.origins.get()) {
 			apiError(w, http.StatusForbidden, "origin_mismatch", "Request origin is not allowed.")
 			return
 		}
@@ -61,7 +61,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "" {
 				r.URL.Path = "/"
 			}
-			s.admin.handle(w, r, s.Router)
+			s.admin().handle(w, r, s.adminRouter)
 		})).ServeHTTP(w, r)
 		return
 	}

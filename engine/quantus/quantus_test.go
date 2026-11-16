@@ -203,7 +203,7 @@ func TestNativeMinerTransport(t *testing.T) {
 	_, serverTLS, pin := certificate(t)
 	e := New()
 	defer e.Close()
-	listener, err := e.Listen(0, &config.PortOptions{Diff: 1, TLS: serverTLS})
+	listener, err := e.Listen(0, &config.PortOptions{Diff: 1, TLS: serverTLS}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +343,7 @@ func TestNativeMinerShareAccounting(t *testing.T) {
 	e := New()
 	defer e.Close()
 	e.cur, _ = parseJob(&request{JobID: "accounting", MiningHash: strings.Repeat("00", 32), Difficulty: maxTarget.String()})
-	listener, err := e.Listen(0, &config.PortOptions{Diff: 1, TLS: serverTLS})
+	listener, err := e.Listen(0, &config.PortOptions{Diff: 1, TLS: serverTLS}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"sync/atomic"
 	"time"
 
 	logging "github.com/ipfs/go-log/v2"
@@ -28,6 +29,53 @@ type PaymentManager struct {
 	MinPayment  uint64  // satoshis
 
 	validAddr map[string]bool // cache of address-ownership/validity checks
+
+	// pending holds reloaded settings, applied at the start of the next run
+	// so a configuration reload never changes a payout run in progress.
+	pending  atomic.Pointer[config.PaymentOptions]
+	interval chan time.Duration
+}
+
+// Reloadable payment settings. The pay mode and the accounting parameters
+// (pplns window, pps rate, magnitude, wallet daemon and RPC dialect) are
+// fixed for the life of the process because changing them would mix
+// accounting rules within one ledger.
+func ReloadablePaymentFields() []string {
+	return []string{"interval", "minPayment", "minConfirmations"}
+}
+
+// Update schedules new interval, minPayment and minConfirmations values for the
+// next payout run. Other fields of next are ignored.
+func (pm *PaymentManager) Update(next *config.PaymentOptions) {
+	if pm.options == nil || next == nil {
+		return
+	}
+	pm.pending.Store(next)
+	if next.Interval > 0 && next.Interval != pm.options.Interval {
+		select {
+		case pm.interval <- time.Duration(next.Interval) * time.Second:
+		default:
+		}
+	}
+}
+
+// applyPending installs scheduled settings between runs.
+func (pm *PaymentManager) applyPending() {
+	next := pm.pending.Swap(nil)
+	if next == nil {
+		return
+	}
+	options := *pm.options
+	if next.Interval > 0 {
+		options.Interval = next.Interval
+	}
+	options.MinPayment = next.MinPayment
+	if next.MinConfirmations > 0 {
+		options.MinConfirmations = next.MinConfirmations
+	}
+	pm.options = &options
+	pm.MinPayment = pm.CoinToSat(options.MinPayment)
+	log.Infof("payments: reloaded interval=%ds min=%d sat maturity=%d", options.Interval, pm.MinPayment, options.MinConfirmations)
 }
 
 func NewPaymentManager(options *config.PaymentOptions, poolAddr *config.Recipient, dm *daemons.DaemonManager, db *storage.DB) *PaymentManager {
@@ -36,6 +84,7 @@ func NewPaymentManager(options *config.PaymentOptions, poolAddr *config.Recipien
 		db:          db,
 		PoolAddress: poolAddr,
 		validAddr:   map[string]bool{},
+		interval:    make(chan time.Duration, 1),
 	}
 	// options is nil when payments are disabled; Init/Serve are then never called.
 	if options != nil {
@@ -126,9 +175,15 @@ func splitByShares(rewardSat uint64, shares map[string]float64) map[string]uint6
 func (pm *PaymentManager) Serve() {
 	ticker := time.NewTicker(time.Duration(pm.options.Interval) * time.Second)
 	defer ticker.Stop()
-	for range ticker.C {
-		if err := pm.processPayments(); err != nil {
-			log.Error("payment run failed: ", err)
+	for {
+		select {
+		case d := <-pm.interval:
+			ticker.Reset(d)
+		case <-ticker.C:
+			pm.applyPending()
+			if err := pm.processPayments(); err != nil {
+				log.Error("payment run failed: ", err)
+			}
 		}
 	}
 }

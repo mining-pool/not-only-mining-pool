@@ -29,7 +29,7 @@ func TestAPIOnlyRouting(t *testing.T) {
 func TestCredentialedCORSAndCSRF(t *testing.T) {
 	s := testServer(t)
 	const frontend = "https://portal.test"
-	s.allowedOrigins[frontend] = true // shared immutable configuration in production
+	s.origins.set(map[string]bool{frontend: true})
 	request := func(method, path, body, csrf string, cookie *http.Cookie) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, "https://api.test"+path, strings.NewReader(body))
 		r.Header.Set("Origin", frontend)
@@ -66,9 +66,9 @@ func TestCredentialedCORSAndCSRF(t *testing.T) {
 	if w := request("POST", "/admin-api/auth/logout", "", "incorrect-token", cookie); w.Code != 403 {
 		t.Fatal("CORS replaced CSRF protection")
 	}
-	s.admin.mu.Lock()
-	csrf := s.admin.sessions[tokenKey(cookie.Value)].CSRFToken
-	s.admin.mu.Unlock()
+	s.admin().mu.Lock()
+	csrf := s.admin().sessions[tokenKey(cookie.Value)].CSRFToken
+	s.admin().mu.Unlock()
 	if w := request("POST", "/admin-api/auth/logout", "", csrf, cookie); w.Code != 200 {
 		t.Fatal("cross-origin logout failed")
 	}
@@ -93,19 +93,19 @@ func TestOriginAndCookieConfiguration(t *testing.T) {
 		t.Fatal("valid origins rejected")
 	}
 	s := testServer(t)
-	options := *s.apiConf.Admin
+	options := *s.apiConfig().Admin
 	options.CookieSameSite = "none"
-	auth, err := newAdminAuth(&options, origins)
+	auth, err := newAdminAuth(&options, newOriginSet(origins))
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.admin = auth
+	s.adminPtr.Store(auth)
 	cookie, _ := login(t, s, nil)
 	if cookie.SameSite != http.SameSiteNoneMode || !cookie.Secure {
 		t.Fatal("cross-site cookie is not secure")
 	}
 	options.AllowInsecureHTTP = true
-	if _, err := newAdminAuth(&options, origins); err == nil {
+	if _, err := newAdminAuth(&options, newOriginSet(origins)); err == nil {
 		t.Fatal("allowed insecure SameSite=None")
 	}
 }

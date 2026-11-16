@@ -26,8 +26,10 @@ type JobCounter struct {
 type JobManager struct {
 	PoolAddress *config.Recipient
 
-	Storage               *storage.DB
-	Options               *config.Options
+	Storage *storage.DB
+	Options *config.Options
+	// Live, when set, supplies reloadable settings (reward recipients).
+	Live                  *config.Live
 	JobCounter            *JobCounter
 	ExtraNonce1Generator  *ExtraNonce1Generator
 	ExtraNoncePlaceholder []byte
@@ -101,6 +103,15 @@ func (jm *JobManager) ProcessShare(share *types.Share) {
 
 }
 
+// rewardRecipients returns the fee recipients currently configured; a reload
+// takes effect from the next job.
+func (jm *JobManager) rewardRecipients() []*config.Recipient {
+	if jm.Live != nil {
+		return jm.Live.Get().RewardRecipients
+	}
+	return jm.Options.RewardRecipients
+}
+
 // UpdateCurrentJob updates the job when mining the same height but tx changes
 func (jm *JobManager) UpdateCurrentJob(rpcData *daemons.GetBlockTemplate) {
 	tmpBlockTemplate := NewJob(
@@ -110,7 +121,7 @@ func (jm *JobManager) UpdateCurrentJob(rpcData *daemons.GetBlockTemplate) {
 		jm.ExtraNoncePlaceholder,
 		jm.Options.Coin.Reward,
 		jm.Options.Coin.TxMessages,
-		jm.Options.RewardRecipients,
+		jm.rewardRecipients(),
 		jm.CoinbaseHasher,
 	)
 
@@ -131,7 +142,7 @@ func (jm *JobManager) CreateNewJob(rpcData *daemons.GetBlockTemplate) {
 		jm.ExtraNoncePlaceholder,
 		jm.Options.Coin.Reward,
 		jm.Options.Coin.TxMessages,
-		jm.Options.RewardRecipients,
+		jm.rewardRecipients(),
 		jm.CoinbaseHasher,
 	)
 
@@ -263,7 +274,6 @@ func (jm *JobManager) ProcessSubmit(jobId string, prevDiff, diff *big.Float, ext
 	headerBytes := job.SerializeHeader(merkleRoot, nTimeBytes, nonce) // in LE
 	headerHash := algorithm.GetHashFunc(jm.Options.Algorithm.Name)(headerBytes)
 	headerHashBigInt := new(big.Int).SetBytes(utils.ReverseBytes(headerHash))
-
 
 	bigShareDiff := new(big.Float).Quo(
 		new(big.Float).SetInt(new(big.Int).Mul(algorithm.MaxTargetTruncated, big.NewInt(1<<jm.Options.Algorithm.Multiplier))),

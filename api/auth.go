@@ -43,7 +43,7 @@ type adminAuth struct {
 	ttl        time.Duration
 	localHTTP  bool
 	sameSite   http.SameSite
-	origins    map[string]bool
+	origins    *originSet
 	mu         sync.Mutex
 	sessions   map[[32]byte]adminSession
 	attempts   map[string]loginWindow
@@ -51,7 +51,7 @@ type adminAuth struct {
 	now        func() time.Time
 }
 
-func newAdminAuth(options *config.AdminOptions, origins map[string]bool) (*adminAuth, error) {
+func newAdminAuth(options *config.AdminOptions, origins *originSet) (*adminAuth, error) {
 	if options == nil {
 		return nil, nil // disabled, never an unauthenticated admin mode
 	}
@@ -214,7 +214,7 @@ func (a *adminAuth) handle(w http.ResponseWriter, r *http.Request, public http.H
 			apiError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Use POST to log in.")
 			return
 		}
-		if !allowedOrigin(r, a.origins) {
+		if !allowedOrigin(r, a.origins.get()) {
 			apiError(w, http.StatusForbidden, "origin_mismatch", "Request origin does not match.")
 			return
 		}
@@ -227,7 +227,7 @@ func (a *adminAuth) handle(w http.ResponseWriter, r *http.Request, public http.H
 		return
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		if !allowedOrigin(r, a.origins) || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-CSRF-Token")), []byte(session.CSRFToken)) != 1 {
+		if !allowedOrigin(r, a.origins.get()) || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-CSRF-Token")), []byte(session.CSRFToken)) != 1 {
 			apiError(w, http.StatusForbidden, "csrf_invalid", "Session check failed; refresh and try again.")
 			return
 		}

@@ -52,16 +52,12 @@ func (e *Engine) ClientEngine(_ int, p *config.PortOptions) engine.Engine {
 	return e
 }
 
-func (e *Engine) listenStratum(port int, p *config.PortOptions) (net.Listener, error) {
+func (e *Engine) listenStratum(port int, p *config.PortOptions, getCert func(*tls.ClientHelloInfo) (*tls.Certificate, error)) (net.Listener, error) {
 	address := net.JoinHostPort("", strconv.Itoa(port))
 	var l net.Listener
 	var err error
-	if p.TLS != nil {
-		cert, certErr := tls.LoadX509KeyPair(p.TLS.CertFile, p.TLS.KeyFile)
-		if certErr != nil {
-			return nil, certErr
-		}
-		l, err = tls.Listen("tcp", address, &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{cert}})
+	if getCert != nil {
+		l, err = tls.Listen("tcp", address, &tls.Config{MinVersion: tls.VersionTLS12, GetCertificate: getCert})
 	} else {
 		l, err = net.Listen("tcp", address)
 	}

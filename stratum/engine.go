@@ -110,8 +110,13 @@ func (sc *Client) wantsObjectParams() bool {
 
 // portDefaultDiff returns the starting difficulty configured for this client's port.
 func (sc *Client) portDefaultDiff() float64 {
-	if p := sc.Options.Ports[sc.Socket.LocalAddr().(*net.TCPAddr).Port]; p != nil {
-		return p.Diff
+	if sc.PortOptions != nil {
+		return sc.PortOptions.Diff
+	}
+	if o := sc.options(); o != nil {
+		if p := o.Ports[sc.localPort()]; p != nil {
+			return p.Diff
+		}
 	}
 	return 1
 }
