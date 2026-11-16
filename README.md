@@ -9,16 +9,42 @@ proof-of-work is a hash of the standard 80-byte block header — and now also sh
 Poseidon2).
 
 > Docs: [Tutorial](TUTORIAL.md) · [Pluggable engines](docs/PLUGGABLE_ENGINES.md) ·
-> [End-to-end testing](docs/E2E.md)
-> · 中文：[教程](TUTORIAL_zh.md) · [引擎](docs/PLUGGABLE_ENGINES_zh.md) · [E2E](docs/E2E_zh.md)
+> [End-to-end testing](docs/E2E.md) · [HTTP API & web portal](docs/API.md)
+> · 中文：[教程](TUTORIAL_zh.md) · [引擎](docs/PLUGGABLE_ENGINES_zh.md) · [E2E](docs/E2E_zh.md) · [API 与前端](docs/API_zh.md)
 
 ## Why standalone?
 
 Unlike the original NOMP (node-open-mining-portal), this is **not a portal** — it
 is just the Stratum server. Keeping it standalone makes it easy to add a new
 algorithm or coin without fighting C-library conflicts or restarting an entire
-site. Most operators don't need a portal; they run a handful of coins across a
-few algorithms. If you want a web front-end, build one against the API.
+site. Most operators run a handful of coins across a few algorithms. An optional
+web portal, [pool-webpage](https://github.com/mining-pool/pool-webpage), runs
+independently against the API, with registration-free wallet lookup and a
+read-only operations console. Miner addresses are never published as a list.
+
+## Web portal
+
+The portal lives in its own repository,
+**[mining-pool/pool-webpage](https://github.com/mining-pool/pool-webpage)** — a
+React + TypeScript single-page app with a clean, VS Code-inspired look: pool
+statistics, wallet and worker lookup, mining connection instructions, payment
+receipts when supported, and an operations console. Users do not need accounts.
+
+This repository only provides the JSON API, administrator login, cookie
+sessions, explicit CORS and optional HTTPS; Go does not serve HTML or static
+assets. Deploy the portal on any static host and point it at the API:
+
+```bash
+git clone https://github.com/mining-pool/pool-webpage.git
+cd pool-webpage
+npm ci
+npm run dev:demo   # preview with sample data, no pool needed
+# npm run dev     # against a local pool API at http://127.0.0.1:20000
+```
+
+See [docs/API.md](docs/API.md) ([中文](docs/API_zh.md)) for the endpoints,
+administrator setup, CORS/cookie rules and a local development walkthrough
+connecting both repositories.
 
 ## What it supports
 
@@ -94,7 +120,9 @@ ports use fixed integer share difficulty.
 Optional **PROP/SOLO payments** settle finalized mining rewards in exact base
 units (1 QTC = 10^12 units). Signed transactions are persisted before broadcast,
 and finalized receipts prevent duplicate debits after a restart. `GET /payments`
-exposes balances, pending transaction hashes and finalized receipts.
+exposes settled blocks and pending transaction hashes; `?address=` adds that
+address's balance and receipts. The full ledger is admin-only
+([API docs](docs/API.md#privacy)).
 
 Payments require the [signing bridge setup](engine/quantus/README.md#自动支付)
 (Node.js 20+, Rust and the official Quantus signing library), a dedicated funded
@@ -144,6 +172,7 @@ every push and PR:
 | Adapt mainstream coins / add an algorithm | [TUTORIAL.md](TUTORIAL.md) | [TUTORIAL_zh.md](TUTORIAL_zh.md) |
 | Pluggable engines (architecture + status) | [docs/PLUGGABLE_ENGINES.md](docs/PLUGGABLE_ENGINES.md) | [docs/PLUGGABLE_ENGINES_zh.md](docs/PLUGGABLE_ENGINES_zh.md) |
 | End-to-end testing | [docs/E2E.md](docs/E2E.md) | [docs/E2E_zh.md](docs/E2E_zh.md) |
+| HTTP API, admin login, web portal setup | [docs/API.md](docs/API.md) | [docs/API_zh.md](docs/API_zh.md) |
 
 Quantus: [setup and payment configuration](engine/quantus/README.md) ·
 [development-chain test report](docs/QUANTUS_E2E.md).
@@ -151,7 +180,6 @@ Quantus: [setup and payment configuration](engine/quantus/README.md) ·
 ## TODO
 
 - More algorithms
-- Web front-end
 
 ## Donation
 

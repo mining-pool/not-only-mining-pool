@@ -179,12 +179,14 @@ Redis ACL 需要允许读取这两个配置值。定期备份 Redis 账本。
 付款使用 `utility.batchAll` + `balances.transferKeepAlive`，每批最多 64 个地址。
 签名后的完整交易先持久化再广播；重启或 RPC 超时只重发同一交易。
 最终确认的 `ExtrinsicSuccess` 才扣账；`ExtrinsicFailed` 会保留余额并暂停付款，
-在 `/payments` 的 `fault` 字段报告交易哈希，需检查失败原因后处理账本。
+在管理员接口 `/admin-api/payments` 的 `fault` 字段报告交易哈希（公开接口只显示通用提示），需检查失败原因后处理账本。
 对尚未最终确认的交易，重复广播可能返回 `Already Imported` 或 `Invalid
 Transaction: Stale`；账本仍等待最终确认，不会因此另签一笔付款。
 
-`GET /payments` 返回 12 位精度的整数字符串余额、已确认区块、付款回执和待处理
-交易哈希，不暴露 seed、签名交易内容或钱包配置。完整历史保存在 Redis 账本中；
+`GET /payments` 返回已确认区块和待处理交易哈希；带 `?address=` 时另返回该地址
+12 位精度的整数字符串余额与付款回执。全部矿工的余额与回执只通过管理员接口
+`/admin-api/payments` 返回，见 [API 文档](../../docs/API_zh.md#隐私)。任何接口
+都不暴露 seed、签名交易内容或钱包配置。完整历史保存在 Redis 账本中；
 HTTP 仅返回最近 100 条回执。账本采用串行一致性写入，需按算力提高端口 share
 难度以控制 Redis 写入负载，生产规模的吞吐量尚未压测。
 
