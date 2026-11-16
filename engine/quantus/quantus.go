@@ -325,3 +325,8 @@ func (e *Engine) OnSubmit(s engine.Session, p []interface{}) *types.Share {
 	}
 	return share
 }
+
+// Hashrate: shares are checked against (2^512-1)/diff, i.e. one hash per unit of difficulty.
+func (e *Engine) Hashrate() engine.HashrateUnit {
+	return engine.HashrateUnit{PerDiff: 1, Unit: "H/s"}
+}

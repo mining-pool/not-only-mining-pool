@@ -103,9 +103,24 @@ full address the caller already knows:
 
 Data semantics:
 
-- `hashrate*` fields are accepted share difficulty per second (diff/s) over
-  each window, not algorithm-specific H/s; the portal labels them `diff/s`.
-  Samples are kept for 25 hours and trimmed as shares arrive.
+- `hashrate*` fields are hashrates estimated from accepted shares over each
+  window: Σ(credited share difficulty) × work per difficulty ÷ window seconds,
+  in `hashrateUnit` (`H/s`, or `Sol/s` for Equihash and Beam). Shares are
+  credited at their assigned difficulty, never the luckier achieved one, so a
+  block-solving share does not spike the rate. Samples are kept for 25 hours.
+  Work per difficulty is 2^256 ÷ the difficulty-1 target the shares are checked
+  against:
+
+  | Engine | Work per difficulty | Unit |
+  | --- | --- | --- |
+  | GBT coins | 2^256 ÷ (0xFFFF·2^208 · 2^`algorithm.multiplier`) ≈ 2^32 ÷ 2^multiplier | H/s |
+  | ethash, kaspa, cryptonote (RandomX), ergo, alephium, quantus | 1 | H/s |
+  | kawpow | 2^40 ÷ 255 | H/s |
+  | equihash / zelhash | 2^32 ÷ 0x7FFFF ≈ 8192 | Sol/s |
+  | beam | 1 per credited difficulty (solutions/s when ports use difficulty 1) | Sol/s |
+
+  If your miners use a different difficulty convention, set
+  `api.hashesPerDifficulty` to override the factor.
 - The five values are windows of different lengths, not a time series. Miner
   and rig indexes are historical, not online counts.
 - Go `nil` collections serialize as `null`; the portal treats them as empty.

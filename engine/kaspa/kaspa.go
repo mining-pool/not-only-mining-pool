@@ -313,3 +313,8 @@ func largeJobParams(prePowHash []byte, timestamp int64) string {
 }
 
 
+
+// Hashrate: share target = 2^256/diff (see the package comment); operators whose miners use another convention can override api.hashesPerDifficulty.
+func (e *Engine) Hashrate() engine.HashrateUnit {
+	return engine.HashrateUnit{PerDiff: 1, Unit: "H/s"}
+}

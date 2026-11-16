@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"math"
 	"math/big"
 	"testing"
 )
@@ -29,5 +30,16 @@ func TestTargetHex(t *testing.T) {
 	big33 := new(big.Int).Lsh(big.NewInt(1), 264)
 	if got := TargetHex(big33); got != "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" {
 		t.Fatalf("overflow should clamp: %q", got)
+	}
+}
+
+func TestHashesPerDiff(t *testing.T) {
+	if got := HashesPerDiff(Pow256); got != 1 {
+		t.Fatalf("2^256 base = %v hashes per diff, want 1", got)
+	}
+	// Bitcoin difficulty 1: 0x00000000FFFF << 208 => 2^48 / 0xFFFF ≈ 2^32.
+	btc, _ := new(big.Int).SetString("00000000FFFF0000000000000000000000000000000000000000000000000000", 16)
+	if got := HashesPerDiff(btc); math.Abs(got-4295032833.000015) > 1e-3 {
+		t.Fatalf("bitcoin diff1 = %v hashes", got)
 	}
 }

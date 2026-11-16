@@ -33,3 +33,10 @@ func TargetHex(t *big.Int) string {
 	}
 	return "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"[:64-len(s)] + s
 }
+
+// HashesPerDiff is the expected number of hashes (or solutions) needed per
+// unit of difficulty when difficulty d means value <= base/d: 2^256 / base.
+func HashesPerDiff(base *big.Int) float64 {
+	v, _ := new(big.Float).Quo(new(big.Float).SetInt(Pow256), new(big.Float).SetInt(base)).Float64()
+	return v
+}

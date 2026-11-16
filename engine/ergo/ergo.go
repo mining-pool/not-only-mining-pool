@@ -323,3 +323,8 @@ func mustHex(s string) []byte {
 	b, _ := hex.DecodeString(s)
 	return b
 }
+
+// Hashrate: share target = 2^256/diff.
+func (e *Engine) Hashrate() engine.HashrateUnit {
+	return engine.HashrateUnit{PerDiff: 1, Unit: "H/s"}
+}

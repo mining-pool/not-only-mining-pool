@@ -154,3 +154,11 @@ func TestOnSubmitKnownVector(t *testing.T) {
 		t.Fatal("wrong mix for nonce must be rejected")
 	}
 }
+
+func TestHashrateUsesKawpowDiff1(t *testing.T) {
+	// diff1 0xff<<216 => 2^40 / 255 hashes per difficulty.
+	r := New().Hashrate()
+	if r.Unit != "H/s" || r.PerDiff < 4311810304 || r.PerDiff > 4311810306 {
+		t.Fatalf("kawpow hashrate unit = %+v", r)
+	}
+}

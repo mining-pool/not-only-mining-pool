@@ -465,3 +465,8 @@ func merkleRoot(rawTxs [][]byte) []byte {
 
 
 
+
+// Hashrate: Equihash shares are solutions checked against diff1/diff.
+func (e *Engine) Hashrate() engine.HashrateUnit {
+	return engine.HashrateUnit{PerDiff: engine.HashesPerDiff(diff1), Unit: "Sol/s"}
+}

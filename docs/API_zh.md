@@ -85,7 +85,17 @@ NOMP 的 Go 进程只提供 JSON API，不托管 HTML 或静态文件。矿池�
 
 数据语义：
 
-- `hashrate*` 字段是各窗口内已接受份额的难度 / 秒（diff/s），不是算法相关的 H/s，前端按 `diff/s` 展示。样本保留 25 小时，随新份额写入自动裁剪。
+- `hashrate*` 字段是根据各窗口内已接受份额估算的算力：Σ(计入的份额难度) × 每单位难度的工作量 ÷ 窗口秒数，单位见 `hashrateUnit`（`H/s`；Equihash 与 Beam 为 `Sol/s`）。份额按分配难度计入，而不是实际碰到的更高难度，因此出块份额不会造成算力尖峰。样本保留 25 小时。每单位难度的工作量 = 2^256 ÷ 校验份额所用的难度 1 目标值：
+
+  | 引擎 | 每单位难度工作量 | 单位 |
+  | --- | --- | --- |
+  | GBT 币种 | 2^256 ÷ (0xFFFF·2^208 · 2^`algorithm.multiplier`) ≈ 2^32 ÷ 2^multiplier | H/s |
+  | ethash、kaspa、cryptonote（RandomX）、ergo、alephium、quantus | 1 | H/s |
+  | kawpow | 2^40 ÷ 255 | H/s |
+  | equihash / zelhash | 2^32 ÷ 0x7FFFF ≈ 8192 | Sol/s |
+  | beam | 每单位计入难度 1（端口难度为 1 时即 solutions/s） | Sol/s |
+
+  如果矿机使用不同的难度约定，可通过 `api.hashesPerDifficulty` 覆盖该系数。
 - 五个值是不同长度的统计窗口，不是历史时间序列。矿工 / 矿机索引是历史记录，不等于在线数量。
 - Go 中为 `nil` 的集合会序列化为 `null`，前端将其视为空数组 / 对象。
 - 旧客户端如果依赖 `/pool` 返回的 `miners` 列表，需要改用管理员接口。

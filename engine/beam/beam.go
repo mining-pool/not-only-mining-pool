@@ -304,3 +304,8 @@ func (e *Engine) OnSubmit(s engine.Session, params []interface{}) *types.Share {
 
 	return share
 }
+
+// Hashrate: every BeamHash III solution is forwarded and credited at the port difficulty, so the rate is solutions/s when ports use difficulty 1.
+func (e *Engine) Hashrate() engine.HashrateUnit {
+	return engine.HashrateUnit{PerDiff: 1, Unit: "Sol/s"}
+}

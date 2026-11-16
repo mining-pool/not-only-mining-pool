@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math/big"
 	"reflect"
 	"strconv"
 	"strings"
@@ -68,6 +69,8 @@ func NewEnginePool(options *config.Options) *Pool {
 	db := storage.NewStorage(options.Coin.Name, options.Storage)
 	bm := bans.NewBanningManager(options.Banning)
 	apiServer := api.NewAPIServer(options, db)
+	rate := eng.Hashrate()
+	apiServer.SetHashrate(rate.PerDiff, rate.Unit)
 
 	ss := stratum.NewStratumServer(options, nil, bm)
 	ss.Engine = eng
@@ -165,6 +168,7 @@ func NewPool(options *config.Options) *Pool {
 	jm := jobs.NewJobManager(options, dm, db)
 	bm := bans.NewBanningManager(options.Banning)
 	s := api.NewAPIServer(options, db)
+	s.SetHashrate(gbtHashesPerDiff(options.Algorithm.Multiplier), "H/s")
 	pm := payments.NewPaymentManager(options.PaymentOptions, options.PoolAddress, dm, db)
 
 	return &Pool{
@@ -437,4 +441,12 @@ func (p *Pool) SetupBlockPolling() {
 			}
 		}
 	}()
+}
+
+// gbtHashesPerDiff is the work behind one unit of GBT share difficulty: shares
+// are checked against MaxTargetTruncated×2^multiplier / diff, so one unit of
+// difficulty is 2^256 / (MaxTargetTruncated×2^multiplier) hashes (≈2^32 for
+// sha256d, ≈2^16 for scrypt).
+func gbtHashesPerDiff(multiplier int) float64 {
+	return engine.HashesPerDiff(new(big.Int).Lsh(algorithm.MaxTargetTruncated, uint(multiplier)))
 }

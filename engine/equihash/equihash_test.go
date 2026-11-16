@@ -179,3 +179,11 @@ func TestShareTargetMath(t *testing.T) {
 		t.Fatalf("diffFromHash(diff1) should be ~1, got %v", d)
 	}
 }
+
+func TestHashrateIsSolutionsPerSecond(t *testing.T) {
+	// diff1 0x0007ffff<<224 => 2^32 / 0x7ffff ≈ 8192 solutions per difficulty.
+	r := New().Hashrate()
+	if r.Unit != "Sol/s" || r.PerDiff < 8192 || r.PerDiff > 8192.02 {
+		t.Fatalf("equihash hashrate unit = %+v", r)
+	}
+}

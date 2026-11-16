@@ -90,7 +90,8 @@ func main() {
 	for miner, rigs := range miners {
 		for i, rig := range rigs {
 			for n := 0; n < 5; n++ {
-				db.PutShare(&types.Share{Miner: miner, Rig: rig, Diff: float64(64 * (i + 1))}, true)
+				// Realistic Quantus share difficulty (1 difficulty = 1 hash).
+				db.PutShare(&types.Share{Miner: miner, Rig: rig, Diff: float64(12_000_000 * (i + 1))}, true)
 			}
 		}
 	}
@@ -120,6 +121,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	server.SetHashrate(1, "H/s") // as engine/quantus reports
 	server.RegisterPaymentStatus(func() (interface{}, error) { return ledger(), nil })
 	server.Serve()
 

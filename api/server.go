@@ -25,6 +25,11 @@ type Server struct {
 	availablePaths []string
 	config         map[string]interface{}
 	coinName       string
+
+	// Shares are stored as difficulty; rates are reported as hashPerDiff ×
+	// difficulty per second in hashUnit.
+	hashPerDiff    float64
+	hashUnit       string
 	admin          *adminAuth
 	allowedOrigins map[string]bool
 }
@@ -66,6 +71,8 @@ func NewServer(options *config.Options, storage *storage.DB) (*Server, error) {
 		config:         make(map[string]interface{}),
 		admin:          admin,
 		allowedOrigins: origins,
+		hashPerDiff:    1,
+		hashUnit:       "H/s",
 	}
 
 	s.ConvertConf(options)
@@ -93,6 +100,27 @@ func (s *Server) ConvertConf(options *config.Options) {
 	}
 	// Never serialize APIOptions: it now contains private authentication settings.
 	s.config["api"] = map[string]interface{}{"host": options.API.Host, "port": options.API.Port}
+}
+
+// SetHashrate sets how much work one unit of share difficulty represents (see
+// engine.HashrateUnit). api.hashesPerDifficulty in the config takes precedence.
+func (s *Server) SetHashrate(perDiff float64, unit string) {
+	if s.apiConf.HashesPerDifficulty > 0 {
+		perDiff = s.apiConf.HashesPerDifficulty
+	}
+	if perDiff > 0 {
+		s.hashPerDiff = perDiff
+	}
+	if unit != "" {
+		s.hashUnit = unit
+	}
+}
+
+// rates converts difficulty-per-second windows into hashrates.
+func (s *Server) rates(v ...*float64) {
+	for _, p := range v {
+		*p *= s.hashPerDiff
+	}
 }
 
 func (s *Server) RegisterFunc(path string, fn func(http.ResponseWriter, *http.Request)) {
@@ -171,7 +199,8 @@ func (s *Server) configFunc(writer http.ResponseWriter, r *http.Request) {
 }
 
 type PoolInfo struct {
-	CoinName string `json:"coinName"`
+	CoinName     string `json:"coinName"`
+	HashrateUnit string `json:"hashrateUnit"`
 
 	Hashrate1Min  float64 `json:"hashrate1min"`
 	Hashrate30Min float64 `json:"hashrate30min"`
@@ -213,8 +242,10 @@ func (s *Server) poolFunc(w http.ResponseWriter, r *http.Request) {
 		log.Error(err)
 	}
 
+	s.rates(&hs1M, &hs30M, &hs1H, &hs6H, &hs1D)
 	miner := PoolInfo{
-		CoinName: s.coinName,
+		CoinName:     s.coinName,
+		HashrateUnit: s.hashUnit,
 
 		Hashrate1Min:  hs1M,
 		Hashrate30Min: hs30M,
@@ -234,7 +265,8 @@ func (s *Server) poolFunc(w http.ResponseWriter, r *http.Request) {
 }
 
 type MinerInfo struct {
-	Name string `json:"name"`
+	Name         string `json:"name"`
+	HashrateUnit string `json:"hashrateUnit"`
 
 	Hashrate1Min  float64 `json:"hashrate1min"`
 	Hashrate30Min float64 `json:"hashrate30min"`
@@ -283,8 +315,10 @@ func (s *Server) minerFunc(w http.ResponseWriter, r *http.Request) {
 		log.Error(err)
 	}
 
+	s.rates(&hs1M, &hs30M, &hs1H, &hs6H, &hs1D)
 	miner := MinerInfo{
-		Name: minerName,
+		Name:         minerName,
+		HashrateUnit: s.hashUnit,
 
 		Hashrate1Min:  hs1M,
 		Hashrate30Min: hs30M,
@@ -306,6 +340,7 @@ func (s *Server) minerFunc(w http.ResponseWriter, r *http.Request) {
 
 type RigInfo struct {
 	Name          string  `json:"name"`
+	HashrateUnit  string  `json:"hashrateUnit"`
 	MinerName     string  `json:"minerName"`
 	Hashrate1Min  float64 `json:"hashrate1min"`
 	Hashrate30Min float64 `json:"hashrate30min"`
@@ -342,9 +377,11 @@ func (s *Server) rigFunc(w http.ResponseWriter, r *http.Request) {
 		log.Error(err)
 	}
 
+	s.rates(&hs1M, &hs30M, &hs1H, &hs6H, &hs1D)
 	miner := RigInfo{
-		Name:      rigName,
-		MinerName: minerName,
+		Name:         rigName,
+		MinerName:    minerName,
+		HashrateUnit: s.hashUnit,
 
 		Hashrate1Min:  hs1M,
 		Hashrate30Min: hs30M,

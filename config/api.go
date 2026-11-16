@@ -11,6 +11,10 @@ type APIOptions struct {
 	TLS            *TLSServerOptions `json:"tls,omitempty"`
 	Admin          *AdminOptions     `json:"admin,omitempty"`
 	AllowedOrigins []string          `json:"allowedOrigins,omitempty"`
+	// HashesPerDifficulty overrides the work one unit of share difficulty
+	// represents when reporting hashrates. Leave unset to use the engine's
+	// (or, for GBT coins, the algorithm multiplier's) own definition.
+	HashesPerDifficulty float64 `json:"hashesPerDifficulty,omitempty"`
 }
 
 func (api *APIOptions) Addr() string {

@@ -341,3 +341,8 @@ func targetHex(diff float64) string {
 	binary.LittleEndian.PutUint64(b, t.Uint64())
 	return hex.EncodeToString(b)
 }
+
+// Hashrate: share target = 2^256/diff.
+func (e *Engine) Hashrate() engine.HashrateUnit {
+	return engine.HashrateUnit{PerDiff: 1, Unit: "H/s"}
+}

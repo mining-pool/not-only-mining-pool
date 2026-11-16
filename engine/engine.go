@@ -58,6 +58,14 @@ type Session interface {
 // Engine encapsulates everything coin-model-specific. Implementations are
 // expected to be safe for concurrent use: OnSubscribe/OnSubmit are called from
 // per-connection goroutines while Poll runs in its own goroutine.
+// HashrateUnit converts accepted share difficulty per second into a rate:
+// rate = diff/s × PerDiff, reported in Unit ("H/s", or "Sol/s" for
+// Equihash-family proofs where a share is a solution, not a hash).
+type HashrateUnit struct {
+	PerDiff float64
+	Unit    string
+}
+
 type Engine interface {
 	// Name is the engine identifier matched against config's "engine" field
 	// (e.g. "gbt", "kawpow", "ethash").
@@ -80,6 +88,12 @@ type Engine interface {
 	// submits it to the node and fills Share.BlockHash/BlockHex/BlockHeight.
 	// Share.ErrorCode is set for rejected submissions.
 	OnSubmit(s Session, params []interface{}) *types.Share
+
+	// Hashrate describes the work one unit of credited share difficulty
+	// represents, so the API can report a hashrate instead of difficulty per
+	// second. Derive it from the same difficulty-1 target the engine checks
+	// shares against (see HashesPerDiff).
+	Hashrate() HashrateUnit
 
 	// Watch is a long-running loop that watches the node for new work. It calls
 	// onNewWork whenever the shared layer must re-broadcast a job to all miners.

@@ -386,3 +386,8 @@ func seedHash(height uint64) []byte {
 	}
 	return seed
 }
+
+// Hashrate: shares are checked against diff1/diff.
+func (e *Engine) Hashrate() engine.HashrateUnit {
+	return engine.HashrateUnit{PerDiff: engine.HashesPerDiff(diff1), Unit: "H/s"}
+}

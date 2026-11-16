@@ -443,3 +443,8 @@ func hasPrefixBytes(b, prefix []byte) bool {
 	}
 	return true
 }
+
+// Hashrate: share target = 2^256/diff.
+func (e *Engine) Hashrate() engine.HashrateUnit {
+	return engine.HashrateUnit{PerDiff: 1, Unit: "H/s"}
+}
